@@ -31,7 +31,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Page = "home" | "course" | "all-resources" | "calendar";
 type Tab = "Overview" | "Resources" | "Notes" | "Practice" | "Exam";
@@ -797,6 +797,110 @@ function AllResourcesPage({ resources, onCourse, onAdd }: { resources: Resource[
 }
 
 function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
-  const days = ["周一 10", "周二 11", "周三 12", "周四 13", "周五 14"];
-  return <div className="standalone-page content-width"><div className="page-intro"><div className="eyebrow">2026 秋季学期</div><h1>日历</h1><p>让课程截止日期与学习动作保持在同一个节奏里。</p></div><div className="calendar-strip">{days.map((day) => <div key={day} className={day.includes("12") ? "today" : ""}><span>{day}</span>{day.includes("12") && <button onClick={() => onCourse("Overview")}><i style={{ background: courses[0].color }} /><strong>作业 8</strong><small>概率论 · 下午 5:00</small></button>}{day.includes("13") && <button><i style={{ background: courses[2].color }} /><strong>实验 5</strong><small>机器学习 · 晚上 11:59</small></button>}{day.includes("14") && <button><i style={{ background: courses[1].color }} /><strong>习题集 4</strong><small>抽象代数 · 下午 3:00</small></button>}</div>)}</div><section className="upcoming-list"><div className="section-heading"><div><div className="eyebrow">即将到来</div><h2>未来两周</h2></div></div><button onClick={() => onCourse("Exam")}><span>9月5日</span><div><strong>概率论 · 期末考试</strong><small>AI 估计的复习重点已准备好</small></div><span className="days-left">还有 24 天</span><ChevronRight size={15} /></button></section></div>;
+  const days = [
+    { weekday: "周一", date: "10" },
+    { weekday: "周二", date: "11" },
+    { weekday: "周三", date: "12", today: true },
+    { weekday: "周四", date: "13" },
+    { weekday: "周五", date: "14" },
+    { weekday: "周六", date: "15" },
+    { weekday: "周日", date: "16" },
+  ];
+  const hours = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"];
+  const events = [
+    { day: 0, row: 2, span: 1, title: "概率论 · 第 08 讲", time: "10:00–11:30", color: courses[0].color, bg: "#eef0f6", kind: "课程" },
+    { day: 0, row: 5, span: 1, title: "宏观经济学阅读", time: "16:00–17:00", color: courses[3].color, bg: "#f7f3e8", kind: "阅读" },
+    { day: 1, row: 3, span: 1, title: "复习商群章节", time: "12:30–13:30", color: courses[1].color, bg: "#f7eeea", kind: "自习" },
+    { day: 2, row: 2, span: 1, title: "条件期望复习", time: "10:30–11:10", color: courses[0].color, bg: "#eef0f6", kind: "AI 推荐", recommended: true },
+    { day: 2, row: 5, span: 1, title: "作业 8 截止", time: "17:00", color: courses[0].color, bg: "#e8ebf3", kind: "截止", deadline: true },
+    { day: 3, row: 4, span: 2, title: "机器学习实验 5", time: "14:00–17:30", color: courses[2].color, bg: "#edf3f0", kind: "实验" },
+    { day: 3, row: 8, span: 1, title: "实验报告截止", time: "23:59", color: courses[2].color, bg: "#e7f0eb", kind: "截止", deadline: true },
+    { day: 4, row: 4, span: 1, title: "抽象代数习题集", time: "15:00 截止", color: courses[1].color, bg: "#f4e9e5", kind: "截止", deadline: true },
+    { day: 5, row: 3, span: 2, title: "本周错题回顾", time: "12:00–14:00", color: courses[0].color, bg: "#f2f3f7", kind: "复习", recommended: true },
+    { day: 6, row: 6, span: 1, title: "下周计划整理", time: "18:30–19:00", color: "#777771", bg: "#f1f1ee", kind: "计划" },
+  ];
+  const todayTasks = [
+    { title: "完成概率论作业 8", meta: "今天 17:00 截止", color: courses[0].color, done: false },
+    { title: "复习条件期望", meta: "10 分钟 · AI 推荐", color: courses[0].color, done: true },
+    { title: "准备机器学习实验", meta: "20 分钟 · 为明天准备", color: courses[2].color, done: false },
+  ];
+  const milestones = [
+    { date: "8月14日", title: "抽象代数 · 习题集 4", note: "本周", color: courses[1].color },
+    { date: "8月21日", title: "机器学习 · 实验 6", note: "还有 9 天", color: courses[2].color },
+    { date: "9月5日", title: "概率论 · 期末考试", note: "还有 24 天", color: courses[0].color, exam: true },
+    { date: "9月12日", title: "抽象代数 · 期末考试", note: "还有 31 天", color: courses[1].color },
+  ];
+
+  return (
+    <div className="standalone-page content-width calendar-page">
+      <header className="calendar-header">
+        <div className="page-intro calendar-intro">
+          <div className="eyebrow">2026 秋季学期</div>
+          <h1>日历</h1>
+          <p>把课程、截止日期与学习动作安排在同一个节奏里。</p>
+        </div>
+        <div className="calendar-toolbar" aria-label="日历视图控制">
+          <button className="calendar-today-button">今天</button>
+          <button className="calendar-nav-button calendar-nav-prev" aria-label="上一周"><ChevronRight size={14} /></button>
+          <button className="calendar-nav-button" aria-label="下一周"><ChevronRight size={14} /></button>
+          <span className="calendar-range">8月10日—8月16日</span>
+          <div className="calendar-view-switch" aria-label="日历视图"><button className="active">周</button><button>月</button></div>
+          <button className="primary-button calendar-add-button"><Plus size={14} /> 添加计划</button>
+        </div>
+      </header>
+
+      <section className="calendar-stats" aria-label="本周学习概况">
+        <div><span>本周截止</span><strong>6</strong><small>项任务</small></div>
+        <div><span>已规划</span><strong>8.5</strong><small>小时</small></div>
+        <div className="has-warning"><span>时间冲突</span><strong>1</strong><small>处待调整</small></div>
+        <div><span>最近考试</span><strong>24</strong><small>天后</small></div>
+      </section>
+
+      <div className="calendar-workspace">
+        <section className="week-board">
+          <div className="week-board-heading">
+            <div><div className="eyebrow">本周安排</div><h2>8月10日—16日</h2></div>
+            <div className="calendar-legend"><span><i className="legend-course" />课程与任务</span><span><i className="legend-ai" />AI 推荐</span><span><i className="legend-deadline" />截止事项</span></div>
+          </div>
+          <div className="week-grid">
+            <div className="week-corner">GMT+8</div>
+            {days.map((day) => <div key={day.date} className={`week-day ${day.today ? "today" : ""}`}><span>{day.weekday}</span><strong>{day.date}</strong>{day.today && <i>今天</i>}</div>)}
+            <div className="week-columns" />
+            <div className="today-column" />
+            {hours.map((hour, index) => <div key={hour} className="week-hour" style={{ gridRow: index + 2 }}>{hour}</div>)}
+            {hours.map((hour, index) => <div key={`line-${hour}`} className="week-line" style={{ gridRow: index + 2 }} />)}
+            <div className="current-time-line" aria-label="当前时间 下午 2 点 20 分"><span>14:20</span></div>
+            {events.map((event) => (
+              <button
+                key={`${event.day}-${event.title}`}
+                className={`calendar-event ${event.recommended ? "recommended" : ""} ${event.deadline ? "deadline" : ""}`}
+                style={{ gridColumn: event.day + 2, gridRow: `${event.row + 1} / span ${event.span}`, "--event-color": event.color, "--event-bg": event.bg } as CSSProperties}
+                onClick={event.day === 2 ? () => onCourse(event.deadline ? "Overview" : "Notes") : undefined}
+              >
+                <span>{event.kind}</span><strong>{event.title}</strong><small>{event.time}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <aside className="today-panel">
+          <div className="today-panel-heading"><div><div className="eyebrow">今天 · 周三</div><h2>8月12日</h2></div><span>3 项重点</span></div>
+          <div className="today-focus-label"><span>今日重点</span><small>57 分钟</small></div>
+          <div className="today-focus-list">
+            {todayTasks.map((task) => <button key={task.title} className={task.done ? "done" : ""}><span className="today-check" style={{ borderColor: task.color, background: task.done ? task.color : "transparent" }}>{task.done && <Check size={11} />}</span><span><strong>{task.title}</strong><small>{task.meta}</small></span><ChevronRight size={13} /></button>)}
+          </div>
+          <div className="today-progress"><div><span>今日学习进度</span><strong>1 / 3</strong></div><span><i /></span></div>
+          <div className="calendar-ai-note"><div><Sparkles size={14} /><span>AI 排期建议</span></div><p>下午 5 点前优先完成概率论作业。条件期望复习已放在上午，避免与实验准备冲突。</p><button onClick={() => onCourse("Overview")}>查看调整后的计划 <ArrowRight size={13} /></button></div>
+          <div className="calendar-conflict"><Clock3 size={14} /><div><strong>发现 1 处时间重叠</strong><small>周四实验与报告整理时间较紧</small></div></div>
+        </aside>
+      </div>
+
+      <section className="semester-milestones">
+        <div className="section-heading"><div><div className="eyebrow">学期节奏</div><h2>未来重要节点</h2></div><span>接下来 31 天</span></div>
+        <div className="milestone-track">
+          {milestones.map((item) => <button key={item.date + item.title} onClick={item.exam ? () => onCourse("Exam") : undefined} style={{ "--milestone-color": item.color } as CSSProperties}><i /><span>{item.date}</span><strong>{item.title}</strong><small>{item.note}</small>{item.exam && <ChevronRight size={13} />}</button>)}
+        </div>
+      </section>
+    </div>
+  );
 }
