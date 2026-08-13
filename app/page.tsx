@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   BookOpen,
+  Brain,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -16,24 +17,28 @@ import {
   GraduationCap,
   Home,
   Link2,
+  ListChecks,
   Menu,
   MessageSquareText,
+  Mic,
   MoreHorizontal,
   NotebookPen,
   PanelRightClose,
   Play,
   Plus,
+  RotateCcw,
   Search,
   Send,
   Settings,
   Sparkles,
+  SlidersHorizontal,
   Upload,
   Video,
   X,
 } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Page = "home" | "course" | "all-resources" | "calendar";
+type Page = "home" | "course" | "all-resources" | "calendar" | "recitation";
 type Tab = "Overview" | "Resources" | "Notes" | "Practice" | "Exam";
 type Resource = {
   id: number;
@@ -182,6 +187,7 @@ export default function StarDock() {
         onSearch={() => setSearchOpen(true)}
         onResources={() => setPage("all-resources")}
         onCalendar={() => setPage("calendar")}
+        onRecitation={() => setPage("recitation")}
       />
 
       <main className={`main-shell ${page === "course" && aiOpen ? "with-ai" : ""}`}>
@@ -189,6 +195,7 @@ export default function StarDock() {
         {page === "home" && <HomePage onOpenCourse={openCourse} />}
         {page === "all-resources" && <AllResourcesPage resources={resources} onCourse={openCourse} onAdd={() => setResourceModal(true)} />}
         {page === "calendar" && <CalendarPage onCourse={openCourse} />}
+        {page === "recitation" && <RecitationAssistant />}
         {page === "course" && (
           <CourseWorkspace
             activeTab={activeTab}
@@ -256,6 +263,7 @@ function Sidebar({
   onSearch,
   onResources,
   onCalendar,
+  onRecitation,
 }: {
   page: Page;
   activeTab: Tab;
@@ -264,6 +272,7 @@ function Sidebar({
   onSearch: () => void;
   onResources: () => void;
   onCalendar: () => void;
+  onRecitation: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -281,6 +290,7 @@ function Sidebar({
         <NavItem active={page === "home"} icon={<Home />} label="首页" onClick={onHome} />
         <NavItem active={page === "all-resources"} icon={<FolderOpen />} label="全部资料" onClick={onResources} />
         <NavItem active={page === "calendar"} icon={<CalendarDays />} label="日历" onClick={onCalendar} />
+        <NavItem active={page === "recitation"} icon={<Brain />} label="背诵辅助" onClick={onRecitation} />
       </nav>
       <div className="semester-section">
         <div className="sidebar-label"><span>2026 秋季学期</span><ChevronDown size={13} /></div>
@@ -867,6 +877,186 @@ function HomePage({ onOpenCourse }: { onOpenCourse: (tab?: Tab) => void }) {
       </section>
     </div>
   );
+}
+
+type RecitationStage = "source" | "generating" | "questions" | "settings" | "session" | "feedback" | "summary";
+
+const recitationCourses = [
+  { name: "马克思主义基本原理", teacher: "陈老师", color: "#9a625c", available: 8 },
+  { name: "思想道德与法治", teacher: "刘老师", color: "#8a7457", available: 6 },
+  { name: "中国近现代史纲要", teacher: "王老师", color: "#6f7e72", available: 11 },
+  { name: "毛泽东思想和中国特色社会主义理论体系概论", teacher: "周老师", color: "#7c7186", available: 9 },
+];
+
+const recitationMaterials = [
+  { id: 1, type: "复习提纲", title: "《马克思主义基本原理》期末复习提纲", detail: "导论至第七章 · 32 页", updated: "今天更新", recommended: true },
+  { id: 2, type: "课堂课件", title: "导论：马克思主义及其鲜明特征", detail: "第 01 讲 · 46 页", updated: "8月8日", recommended: true },
+  { id: 3, type: "教材", title: "马克思主义基本原理（2023 年版）", detail: "导论 · 第 1–28 页", updated: "8月3日", recommended: false },
+  { id: 4, type: "我的笔记", title: "导论课堂笔记与老师补充重点", detail: "12 个标注 · 6 页", updated: "8月10日", recommended: false },
+];
+
+const recitationQuestions = [
+  { id: 1, chapter: "导论：马克思主义及其鲜明特征", title: "什么是马克思主义？", points: 7, minutes: 4, source: "复习提纲 · 第 1 题", status: "未背", recommended: true },
+  { id: 2, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义由哪些基本组成部分构成？", points: 3, minutes: 2, source: "导论课件 · 第 12 页", status: "未背", recommended: true },
+  { id: 3, chapter: "导论：马克思主义及其鲜明特征", title: "如何理解马克思主义基本立场、基本观点和基本方法的统一？", points: 5, minutes: 4, source: "复习提纲 · 第 1 题", status: "模糊", recommended: true },
+  { id: 4, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义有哪些鲜明特征？", points: 5, minutes: 3, source: "教材 · 第 15–21 页", status: "已掌握", recommended: false },
+  { id: 5, chapter: "世界的物质性及发展规律", title: "如何理解世界的物质统一性？", points: 4, minutes: 3, source: "复习提纲 · 第 6 题", status: "未背", recommended: false },
+  { id: 6, chapter: "世界的物质性及发展规律", title: "物质与意识的辩证关系是什么？", points: 6, minutes: 4, source: "课堂课件 · 第 38 页", status: "模糊", recommended: true },
+];
+
+function RecitationAssistant() {
+  const [stage, setStage] = useState<RecitationStage>("source");
+  const [course, setCourse] = useState(recitationCourses[0].name);
+  const [materialIds, setMaterialIds] = useState<number[]>([1, 2]);
+  const [questionIds, setQuestionIds] = useState<number[]>([1, 2, 3]);
+  const [order, setOrder] = useState("按章节顺序");
+  const [answerMode, setAnswerMode] = useState("文字回答");
+  const [standard, setStandard] = useState("关键点完整");
+  const [answer, setAnswer] = useState("");
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [hintOpen, setHintOpen] = useState(false);
+  const selectedQuestions = recitationQuestions.filter((question) => questionIds.includes(question.id));
+  const currentQuestion = selectedQuestions[questionIndex] ?? selectedQuestions[0];
+  const totalMinutes = selectedQuestions.reduce((total, question) => total + question.minutes, 0);
+
+  const generateQuestions = () => {
+    setStage("generating");
+    window.setTimeout(() => setStage("questions"), 1150);
+  };
+
+  const startSession = () => {
+    setQuestionIndex(0);
+    setAnswer("");
+    setHintOpen(false);
+    setStage("session");
+  };
+
+  const nextQuestion = () => {
+    if (questionIndex >= selectedQuestions.length - 1) {
+      setStage("summary");
+      return;
+    }
+    setQuestionIndex((index) => index + 1);
+    setAnswer("");
+    setHintOpen(false);
+    setStage("session");
+  };
+
+  return (
+    <div className="recitation-page">
+      <header className="recitation-hero">
+        <div><div className="eyebrow">AI 学习工作流</div><h1>背诵辅助</h1><p>从课程资料生成背诵题，让 AI 一次问一个，并针对遗漏继续追问。</p></div>
+        <div className="recitation-history"><span>最近一次</span><strong>马克思主义基本原理</strong><small>6 道题 · 关键点覆盖率 76%</small></div>
+      </header>
+
+      <div className="recitation-steps" aria-label="背诵流程">
+        {[
+          ["source", "01", "选择范围"],
+          ["questions", "02", "选择题目"],
+          ["settings", "03", "背诵设置"],
+          ["session", "04", "开始背诵"],
+        ].map(([key, number, label], index) => {
+          const stages: RecitationStage[] = ["source", "questions", "settings", "session"];
+          const activeIndex = stage === "generating" ? 0 : stage === "feedback" || stage === "summary" ? 3 : stages.indexOf(stage);
+          return <span key={key} className={index <= activeIndex ? "active" : ""}><i>{index < activeIndex ? <Check size={11} /> : number}</i>{label}</span>;
+        })}
+      </div>
+
+      {stage === "source" && (
+        <div className="recitation-stage recitation-source-stage">
+          <section>
+            <div className="recitation-section-heading"><div><span>第一步</span><h2>选择课程</h2></div><p>先确定本次背诵属于哪门课。</p></div>
+            <div className="recitation-course-grid">
+              {recitationCourses.map((item) => <button key={item.name} className={course === item.name ? "selected" : ""} onClick={() => setCourse(item.name)}><i style={{ background: item.color }} /><span><strong>{item.name}</strong><small>{item.teacher} · {item.available} 份可用资料</small></span>{course === item.name && <CheckCircle2 size={17} />}</button>)}
+            </div>
+          </section>
+          <section className="recitation-material-section">
+            <div className="recitation-section-heading"><div><span>第二步</span><h2>选择资料范围</h2></div><p>AI 只会根据选中的课程资料生成题目和答案要点。</p></div>
+            <div className="recitation-material-list">
+              {recitationMaterials.map((material) => {
+                const selected = materialIds.includes(material.id);
+                return <button key={material.id} className={selected ? "selected" : ""} onClick={() => setMaterialIds((ids) => selected ? ids.filter((id) => id !== material.id) : [...ids, material.id])}><span className="material-check">{selected && <Check size={12} />}</span><span className="material-icon"><FileText size={16} /></span><span><strong>{material.title}</strong><small>{material.type} · {material.detail}</small></span>{material.recommended && <em><Sparkles size={11} /> 推荐</em>}<small>{material.updated}</small></button>;
+              })}
+            </div>
+          </section>
+          <div className="recitation-action-bar"><div><strong>{materialIds.length}</strong><span>份资料已选择</span><small>预计覆盖 3 个章节</small></div><button className="primary-button" disabled={!materialIds.length} onClick={generateQuestions}><Sparkles size={14} /> 生成背诵题</button></div>
+        </div>
+      )}
+
+      {stage === "generating" && (
+        <div className="recitation-stage recitation-generating">
+          <div className="generation-orbit"><Brain size={27} /></div><div className="eyebrow">正在整理课程上下文</div><h2>从 {materialIds.length} 份资料中生成背诵题</h2><p>AI 正在识别章节结构、合并重复知识点，并把每道题关联到答案要点与原文出处。</p>
+          <div className="generation-steps"><span className="done"><Check size={12} /> 识别章节结构</span><span className="done"><Check size={12} /> 提取可考知识点</span><span><span className="mini-spinner" /> 合并问题与关联出处</span></div>
+        </div>
+      )}
+
+      {stage === "questions" && (
+        <div className="recitation-stage">
+          <div className="recitation-stage-title"><div><div className="eyebrow">马克思主义基本原理 · 已生成 6 道题</div><h2>选择本次要背的题目</h2><p>先审阅 AI 生成的题目，再决定今天背哪些。</p></div><div className="question-quick-actions"><button onClick={() => setQuestionIds(recitationQuestions.filter((question) => question.recommended).map((question) => question.id))}><Sparkles size={12} /> 选择 AI 推荐</button><button onClick={() => setQuestionIds(recitationQuestions.map((question) => question.id))}>全选</button><button onClick={() => setQuestionIds([])}>清空</button></div></div>
+          {[...new Set(recitationQuestions.map((question) => question.chapter))].map((chapter) => (
+            <section className="question-group" key={chapter}><div className="question-group-title"><div><span>章节</span><h3>{chapter}</h3></div><button onClick={() => { const chapterIds = recitationQuestions.filter((question) => question.chapter === chapter).map((question) => question.id); setQuestionIds((ids) => [...new Set([...ids, ...chapterIds])]); }}>全选本章</button></div>
+              {recitationQuestions.filter((question) => question.chapter === chapter).map((question) => {
+                const selected = questionIds.includes(question.id);
+                return <button key={question.id} className={`generated-question ${selected ? "selected" : ""}`} onClick={() => setQuestionIds((ids) => selected ? ids.filter((id) => id !== question.id) : [...ids, question.id])}><span className="question-check">{selected && <Check size={12} />}</span><span><strong>{question.title}</strong><small>{question.source} · {question.points} 个关键点 · 约 {question.minutes} 分钟</small></span>{question.recommended && <em>AI 推荐</em>}<i className={`question-status ${question.status}`}>{question.status}</i></button>;
+              })}
+            </section>
+          ))}
+          <div className="recitation-action-bar sticky"><button className="text-button" onClick={() => setStage("source")}><ChevronRight size={13} /> 返回资料范围</button><div><strong>{questionIds.length}</strong><span>道题已选择</span><small>预计 {totalMinutes} 分钟</small></div><button className="primary-button" disabled={!questionIds.length} onClick={() => setStage("settings")}>设置并开始 <ArrowRight size={14} /></button></div>
+        </div>
+      )}
+
+      {stage === "settings" && (
+        <div className="recitation-stage recitation-settings-stage">
+          <div className="recitation-stage-title"><div><div className="eyebrow">开始前的最后一步</div><h2>设置这轮背诵</h2><p>{questionIds.length} 道题，预计 {totalMinutes} 分钟。默认采用适合政治课的关键点检查。</p></div></div>
+          <div className="recitation-setting-list">
+            <SettingChoice icon={<ListChecks size={17} />} title="提问顺序" description="决定 AI 下一题问什么" options={["按章节顺序", "随机提问", "薄弱题优先"]} value={order} onChange={setOrder} />
+            <SettingChoice icon={<Mic size={17} />} title="回答方式" description="展示原型不会调用真实语音识别" options={["文字回答", "口头自测"]} value={answerMode} onChange={setAnswerMode} />
+            <SettingChoice icon={<SlidersHorizontal size={17} />} title="反馈标准" description="AI 如何判断回答是否完整" options={["覆盖主要意思", "关键点完整", "考试表述严格"]} value={standard} onChange={setStandard} />
+          </div>
+          <div className="recitation-action-bar"><button className="text-button" onClick={() => setStage("questions")}><ChevronRight size={13} /> 返回选择题目</button><div><strong>{questionIds.length}</strong><span>道题</span><small>{order} · {standard}</small></div><button className="primary-button" onClick={startSession}>开始背诵 <ArrowRight size={14} /></button></div>
+        </div>
+      )}
+
+      {stage === "session" && currentQuestion && (
+        <div className="recitation-stage recitation-session-stage">
+          <div className="session-topline"><div><span>马克思主义基本原理</span><strong>{currentQuestion.chapter}</strong></div><div><span>第 {questionIndex + 1} / {selectedQuestions.length} 题</span><button onClick={() => setStage("summary")}>结束本轮</button></div></div>
+          <div className="session-progress"><span style={{ width: `${((questionIndex + 1) / selectedQuestions.length) * 100}%` }} /></div>
+          <div className="question-focus"><div className="eyebrow">AI 提问</div><h2>{currentQuestion.title}</h2><p>请尽量脱离资料，用自己的语言完整复述。提交后 AI 会按关键点检查，而不只判断字面是否一致。</p>
+            {hintOpen && <div className="recitation-hint"><Sparkles size={14} /><div><strong>答题结构提示</strong><span>可以从总体定义、基本组成，以及基本立场、观点和方法的有机统一三个层次回答。</span></div></div>}
+            {answerMode === "文字回答" ? <textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="在这里写下你的回答……" aria-label="背诵回答" /> : <button className="voice-answer" onClick={() => setAnswer("马克思主义是由马克思和恩格斯创立并不断发展的科学理论体系……")}><Mic size={21} /><span>{answer ? "已完成一次模拟口述" : "点击开始口述"}</span><small>展示模式 · 不会调用麦克风</small></button>}
+            <div className="session-actions"><button onClick={() => setHintOpen(true)}>给一点提示</button><button onClick={() => { setHintOpen(true); setAnswer(""); }}>暂时不会</button><button className="primary-button" disabled={!answer.trim()} onClick={() => setStage("feedback")}>提交回答</button></div>
+          </div>
+        </div>
+      )}
+
+      {stage === "feedback" && currentQuestion && (
+        <div className="recitation-stage recitation-feedback-stage">
+          <div className="feedback-heading"><div><div className="eyebrow">第 {questionIndex + 1} 题 · AI 答案诊断</div><h2>主干已经答出，还有两个关键点需要补全。</h2><p>你说明了创立者、科学理论体系和三个组成部分，但社会发展目标与内在统一关系还不完整。</p></div><div className="coverage-score"><strong>72</strong><span>%</span><small>关键点覆盖率</small></div></div>
+          <div className="answer-diagnostic">
+            <div className="diagnostic-row covered"><CheckCircle2 size={16} /><span><strong>创立与发展</strong><small>由马克思、恩格斯创立，并由后继者不断发展</small></span><em>已覆盖</em></div>
+            <div className="diagnostic-row covered"><CheckCircle2 size={16} /><span><strong>基本组成</strong><small>马克思主义哲学、政治经济学和科学社会主义</small></span><em>已覆盖</em></div>
+            <div className="diagnostic-row partial"><Circle size={16} /><span><strong>研究与发展规律</strong><small>需要补充自然、社会和人类思维发展的一般规律</small></span><em>不完整</em></div>
+            <div className="diagnostic-row missing"><Circle size={16} /><span><strong>最终目标与内在统一</strong><small>未提及人的解放、全面发展，以及基本立场、观点和方法的有机统一</small></span><em>未提及</em></div>
+          </div>
+          <div className="follow-up-card"><div><Sparkles size={15} /><span>AI 针对遗漏追问</span></div><h3>马克思主义关于社会发展方向和人的最终目标，核心表述是什么？</h3><p>先在心里回答这一小问，再回到完整定义，会更容易形成稳定的答题结构。</p></div>
+          <div className="recitation-action-bar"><button className="text-button" onClick={() => setStage("session")}><RotateCcw size={13} /> 再完整回答一次</button><div><strong>{questionIndex + 1}</strong><span>/ {selectedQuestions.length}</span><small>本题已完成诊断</small></div><button className="primary-button" onClick={nextQuestion}>{questionIndex === selectedQuestions.length - 1 ? "查看本轮总结" : "下一题"} <ArrowRight size={14} /></button></div>
+        </div>
+      )}
+
+      {stage === "summary" && (
+        <div className="recitation-stage recitation-summary-stage">
+          <div className="summary-mark"><Check size={24} /></div><div className="eyebrow">本轮背诵完成</div><h2>你已经建立了第一轮答案结构。</h2><p>独立复述比直接查看答案更有效。下一轮优先补齐遗漏的目标表述和概念关系。</p>
+          <div className="summary-stats"><div><strong>{Math.max(1, questionIndex)}</strong><span>独立完整</span></div><div><strong>1</strong><span>提示后完成</span></div><div><strong>1</strong><span>需要重背</span></div><div><strong>76%</strong><span>平均覆盖率</span></div></div>
+          <section className="summary-review"><div><span>建议重背</span><h3>什么是马克思主义？</h3><p>重点补充“社会主义代替资本主义、最终实现共产主义”和“基本立场、观点、方法的有机统一”。</p></div><button onClick={() => { setQuestionIds([1]); setStage("settings"); }}>只重背这道题 <ArrowRight size={13} /></button></section>
+          <div className="summary-actions"><button onClick={() => setStage("questions")}>返回题目列表</button><button onClick={() => alert("已加入明日计划：重背“什么是马克思主义？” · 10 分钟")}>加入明日计划</button><button className="primary-button" onClick={() => { setQuestionIndex(0); setStage("settings"); }}>再来一轮</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingChoice({ icon, title, description, options, value, onChange }: { icon: React.ReactNode; title: string; description: string; options: string[]; value: string; onChange: (value: string) => void }) {
+  return <section className="recitation-setting"><div className="setting-intro"><span>{icon}</span><div><h3>{title}</h3><p>{description}</p></div></div><div className="setting-options">{options.map((option) => <button key={option} className={value === option ? "selected" : ""} onClick={() => onChange(option)}>{value === option && <Check size={12} />}{option}</button>)}</div></section>;
 }
 
 function AllResourcesPage({ resources, onCourse, onAdd }: { resources: Resource[]; onCourse: (tab?: Tab) => void; onAdd: () => void }) {
