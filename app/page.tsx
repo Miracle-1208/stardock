@@ -75,16 +75,6 @@ const initialResources: Resource[] = [
   { id: 8, type: "视频", title: "第 07 讲课堂录屏", detail: "1小时18分 · 已生成文字稿", date: "8月11日", indexed: true },
 ];
 
-const mapTopics = [
-  { title: "概率空间", mastery: 92, group: "基础" },
-  { title: "条件概率", mastery: 85, group: "基础" },
-  { title: "随机变量", mastery: 81, group: "核心概念" },
-  { title: "概率分布", mastery: 76, group: "核心概念" },
-  { title: "条件期望", mastery: 48, group: "推断" },
-  { title: "大数定律", mastery: 63, group: "极限定理" },
-  { title: "中心极限定理", mastery: 41, group: "极限定理" },
-];
-
 const searchItems = [
   { type: "课件", title: "条件期望", source: "第 07 讲 · 第 18–31 页" },
   { type: "教材", title: "给定随机变量的条件期望", source: "第 5.2 章 · 第 186 页" },
@@ -116,12 +106,8 @@ export default function StarDock() {
   const [resourceModal, setResourceModal] = useState(false);
   const [resources, setResources] = useState(initialResources);
   const [mastery, setMastery] = useState(48);
-  const [courseProgress, setCourseProgress] = useState(68);
-  const [selectedTopic, setSelectedTopic] = useState("条件期望");
   const [aiMessage, setAiMessage] = useState(defaultAi);
-  const [completedTasks, setCompletedTasks] = useState<number[]>([]);
   const [targetedReview, setTargetedReview] = useState(false);
-  const [taskPulse, setTaskPulse] = useState<number | null>(null);
   const [planItems, setPlanItems] = useState<PlanItem[]>(initialPlanItems);
 
   const openCourse = useCallback((tab: Tab = "Overview") => {
@@ -147,7 +133,6 @@ export default function StarDock() {
   const markWrongAnswer = () => {
     if (!targetedReview) {
       setMastery(42);
-      setCourseProgress(67);
       setTargetedReview(true);
       setAiMessage({
         label: "学习模型已更新",
@@ -156,34 +141,6 @@ export default function StarDock() {
       });
       setAiOpen(true);
     }
-  };
-
-  const toggleTask = (id: number) => {
-    setCompletedTasks((current) => {
-      const completing = !current.includes(id);
-      setTaskPulse(id);
-      window.setTimeout(() => setTaskPulse(null), 520);
-      setCourseProgress((progress) => Math.max(0, Math.min(100, progress + (completing ? 1 : -1))));
-      setAiMessage(
-        completing
-          ? { label: "计划已更新", title: "很好，课程上下文已经同步。", body: "这次学习动作已经记录，今天剩余的任务也随之调整。" }
-          : defaultAi,
-      );
-      return completing ? [...current, id] : current.filter((taskId) => taskId !== id);
-    });
-  };
-
-  const askAboutTopic = (topic: string) => {
-    setSelectedTopic(topic);
-    setAiOpen(true);
-    setAiMessage({
-      label: "课程地图上下文",
-      title: topic,
-      body:
-        topic === "条件期望"
-          ? "当前掌握度为 48%。多数错误与塔式法则有关；第 07 讲和作业 6 是最适合复习的资料。"
-          : `从笔记、作业和练习记录来看，你对“${topic}”的理解较为稳定。`,
-    });
   };
 
   return (
@@ -214,14 +171,8 @@ export default function StarDock() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             resourceCount={resources.length + 10}
-            courseProgress={courseProgress}
             mastery={mastery}
-            selectedTopic={selectedTopic}
-            onTopic={askAboutTopic}
-            completedTasks={completedTasks}
             targetedReview={targetedReview}
-            taskPulse={taskPulse}
-            onTask={toggleTask}
             resources={resources}
             onAddResource={() => setResourceModal(true)}
             onWrongAnswer={markWrongAnswer}
@@ -244,7 +195,7 @@ export default function StarDock() {
             onClose={() => setAiOpen(false)}
             message={aiMessage}
             setMessage={setAiMessage}
-            topic={selectedTopic}
+            topic="条件期望"
             resourceCount={resources.length + 10}
             targetedReview={targetedReview}
             onOpenPractice={() => openCourse("Practice")}
@@ -360,21 +311,15 @@ function CourseWorkspace(props: {
   activeTab: Tab;
   setActiveTab: (tab: Tab) => void;
   resourceCount: number;
-  courseProgress: number;
   mastery: number;
-  selectedTopic: string;
-  onTopic: (topic: string) => void;
-  completedTasks: number[];
   targetedReview: boolean;
-  taskPulse: number | null;
-  onTask: (id: number) => void;
   resources: Resource[];
   onAddResource: () => void;
   onWrongAnswer: () => void;
   onAiAction: (message: typeof defaultAi) => void;
 }) {
   const tabs: Tab[] = ["Overview", "Resources", "Notes", "Practice", "Exam"];
-  const tabLabels: Record<Tab, string> = { Overview: "概览", Resources: "资料", Notes: "笔记", Practice: "练习", Exam: "考试" };
+  const tabLabels: Record<Tab, string> = { Overview: "课程主页", Resources: "资料", Notes: "笔记", Practice: "练习", Exam: "考试" };
   return (
     <div className="course-page">
       <header className="course-header">
@@ -404,79 +349,33 @@ function CourseWorkspace(props: {
   );
 }
 
-function Overview({ courseProgress, mastery, selectedTopic, onTopic, completedTasks, targetedReview, taskPulse, onTask }: {
-  courseProgress: number;
+function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction }: {
   mastery: number;
-  selectedTopic: string;
-  onTopic: (topic: string) => void;
-  completedTasks: number[];
   targetedReview: boolean;
-  taskPulse: number | null;
-  onTask: (id: number) => void;
+  resources: Resource[];
+  setActiveTab: (tab: Tab) => void;
+  onAiAction: (message: typeof defaultAi) => void;
 }) {
-  const baseTasks = [
-    { id: 1, title: "重看第 07 讲例题", detail: "12 分钟 · 课程 AI", meta: "第 07 讲" },
-    { id: 2, title: "完成作业 8", detail: "25 分钟 · 今天截止", meta: "6 道题" },
-    { id: 3, title: "练习 4 道考试题", detail: "20 分钟 · 自适应题组", meta: "考试复习" },
+  const upcoming = [
+    { date: "今天 17:00", title: "作业 8 截止", detail: "还有 6 道题待提交", urgent: true },
+    { date: "明天 10:00", title: "第 08 讲：大数定律", detail: "教学楼 A203", urgent: false },
+    { date: "8月15日", title: "本周错题回顾", detail: "我的题册 · 5 道题", urgent: false },
   ];
-  const tasks = targetedReview
-    ? [{ id: 4, title: "复习条件期望", detail: "10 分钟 · 练习后自动添加", meta: "针对性复习", new: true }, ...baseTasks]
-    : baseTasks;
   return (
-    <div className="overview-content content-width">
-      <section className="ai-brief-section">
-        <div className="section-kicker"><Sparkles size={14} /> AI 学情简报 <span>根据你最近的学习动作更新</span></div>
-        <div className="brief-grid">
-          <div className="progress-statement">
-            <div className="progress-orbit" style={{ "--progress": `${courseProgress * 3.6}deg` } as React.CSSProperties}>
-              <div className="progress-orbit-inner"><span>{courseProgress}</span><sup>%</sup><small>课程进度</small></div>
-            </div>
-            <span className="progress-caption">来自 18 份资料与 47 次学习动作</span>
-          </div>
-          <div className="brief-copy">
-            <h2>{targetedReview ? "学习计划刚刚根据你的需要重新调整。" : "基础很扎实，还有一个概念需要留意。"}</h2>
-            <p>{targetedReview ? "一次练习错误让条件期望掌握度下降到 42%，下面已自动加入针对性复习。" : "你在概率分布上的表现最稳定，条件期望仍是当前最薄弱的知识点。"}</p>
-            <div className="brief-facts"><span><strong>{mastery}%</strong> 条件期望</span><span><strong>24</strong> 天后期末考试</span></div>
-          </div>
-        </div>
+    <div className="course-home-content content-width">
+      <section className="continue-learning-card">
+        <div className="continue-copy"><div className="eyebrow">继续学习</div><span>第 07 讲 · 条件期望</span><h2>从塔式法则的例题继续</h2><p>上次看到第 24 页，昨天 21:40。你在例题 3 的条件化步骤停了下来。</p><button className="primary-button" onClick={() => setActiveTab("Resources")}><Play size={14} /> 继续学习</button></div>
+        <div className="continue-preview"><span>第 07 讲</span><strong>E[E(X|Y)] = E(X)</strong><small>条件期望 · 塔式法则</small><i>24 / 38 页</i></div>
       </section>
 
-      <section className="course-map-section">
-        <div className="section-heading"><div><div className="eyebrow">课程地图</div><h2>知识如何在这门课里连接</h2></div><p>由 18 份资料与 47 次学习动作构建</p></div>
-        <div className="map-list">
-          {mapTopics.map((topic, index) => {
-            const value = topic.title === "条件期望" ? mastery : topic.mastery;
-            const active = selectedTopic === topic.title;
-            return (
-              <button key={topic.title} onClick={() => onTopic(topic.title)} className={`map-row ${active ? "active" : ""} ${topic.title === "条件期望" && mastery === 42 ? "mastery-changed" : ""}`}>
-                <span className="map-index">{String(index + 1).padStart(2, "0")}</span>
-                <span className="map-title"><strong>{topic.title}</strong><small>{topic.group}</small></span>
-                <span className="mastery-line"><span style={{ width: `${value}%` }} /></span>
-                <span className="mastery-value">{value}%</span>
-                <ChevronRight size={15} />
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      <div className="course-home-grid">
+        <section className="course-next-section"><div className="action-section-heading"><div><div className="eyebrow">接下来</div><h2>课程待办</h2></div><span>3 项</span></div><div className="course-next-list">{upcoming.map((item) => <button key={item.title} onClick={() => setActiveTab(item.title.includes("作业") ? "Practice" : "Overview")}><span className={item.urgent ? "urgent" : ""}>{item.date}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><ChevronRight size={14} /></button>)}</div></section>
+        <section className="course-attention-card"><div className="eyebrow">当前需要关注</div><div className="attention-score"><strong>{mastery}%</strong><span>条件期望</span></div><h2>{targetedReview ? "刚才的练习暴露了塔式法则的混淆。" : "条件期望是当前最值得补齐的概念。"}</h2><p>从第 07 讲例题和作业 6 开始，约 15 分钟。</p><div><button onClick={() => setActiveTab("Practice")}>开始练习</button><button onClick={() => onAiAction({ label: "课程主页", title: "条件期望应该从哪里补起？", body: "建议先回到第 07 讲第 24 页理解塔式法则，再完成作业 6 第 3 题。" })}>问课程 AI</button></div></section>
+      </div>
 
-      <section className="today-section">
-        <div className="section-heading"><div><div className="eyebrow">今天 · 8月12日</div><h2>今日学习计划</h2></div><div className="plan-time"><Clock3 size={14} /> {targetedReview ? "67" : "57"} 分钟</div></div>
-        <div className="task-list">
-          {tasks.map((task) => {
-            const complete = completedTasks.includes(task.id);
-            return (
-              <button key={task.id} onClick={() => onTask(task.id)} className={`task-row ${complete ? "complete" : ""} ${task.new ? "new-task" : ""} ${taskPulse === task.id ? "task-pulse" : ""}`}>
-                <span className="task-check">{complete ? <Check size={15} /> : <Circle size={16} />}</span>
-                <span className="task-copy"><strong>{task.title}</strong><small>{task.detail}</small></span>
-                {task.new && <span className="added-label"><Sparkles size={12} /> 学习模型</span>}
-                <span className="task-meta">{task.meta}</span>
-                <ArrowRight size={15} />
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      <section className="course-recent-section"><div className="action-section-heading"><div><div className="eyebrow">最近加入</div><h2>课程资料</h2></div><button onClick={() => setActiveTab("Resources")}>查看全部 <ArrowRight size={13} /></button></div><div className="course-recent-list">{resources.slice(-3).reverse().map((resource) => <button key={resource.id} onClick={() => setActiveTab("Resources")}><span className="recent-resource-icon"><FileText size={16} /></span><span><strong>{resource.title}</strong><small>{resource.type} · {resource.detail}</small></span><span>{resource.date}</span><ChevronRight size={14} /></button>)}</div></section>
+
+      <section className="course-activity-section"><div className="action-section-heading"><div><div className="eyebrow">最近动态</div><h2>这门课发生了什么</h2></div><span>过去 3 天</span></div><div className="course-activity-list"><div><i /><span><strong>完成第 07 讲课堂笔记</strong><small>昨天 21:40 · 笔记已加入课程上下文</small></span></div><div><i /><span><strong>作业 7 已提交</strong><small>8月11日 · 7/8 题正确</small></span></div><div><i /><span><strong>课程 AI 更新了条件期望掌握状态</strong><small>8月10日 · 来自练习与笔记记录</small></span></div></div></section>
     </div>
   );
 }
