@@ -185,6 +185,7 @@ export default function StarDock() {
       />
 
       <main className={`main-shell ${page === "course" && aiOpen ? "with-ai" : ""}`}>
+        <WorkspaceSearchBar onSearch={() => setSearchOpen(true)} />
         {page === "home" && <HomePage onOpenCourse={openCourse} />}
         {page === "all-resources" && <AllResourcesPage resources={resources} onCourse={openCourse} onAdd={() => setResourceModal(true)} />}
         {page === "calendar" && <CalendarPage onCourse={openCourse} />}
@@ -278,7 +279,6 @@ function Sidebar({
       </button>
       <nav className="primary-nav" aria-label="主导航">
         <NavItem active={page === "home"} icon={<Home />} label="首页" onClick={onHome} />
-        <NavItem active={false} icon={<Search />} label="搜索" shortcut="⌘K" onClick={onSearch} />
         <NavItem active={page === "all-resources"} icon={<FolderOpen />} label="全部资料" onClick={onResources} />
         <NavItem active={page === "calendar"} icon={<CalendarDays />} label="日历" onClick={onCalendar} />
       </nav>
@@ -309,8 +309,22 @@ function Sidebar({
   );
 }
 
-function NavItem({ active, icon, label, shortcut, onClick }: { active: boolean; icon: React.ReactNode; label: string; shortcut?: string; onClick: () => void }) {
-  return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}><span>{icon}</span><span>{label}</span>{shortcut && <kbd>{shortcut}</kbd>}</button>;
+function NavItem({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
+  return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}><span>{icon}</span><span>{label}</span></button>;
+}
+
+function WorkspaceSearchBar({ onSearch }: { onSearch: () => void }) {
+  return (
+    <div className="workspace-topbar">
+      <div className="workspace-topbar-inner">
+        <button className="workspace-search-trigger" onClick={onSearch} aria-label="搜索整个学习空间">
+          <Search size={15} />
+          <span>搜索课程、资料、笔记与练习记录</span>
+          <kbd>⌘K</kbd>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CourseWorkspace(props: {
