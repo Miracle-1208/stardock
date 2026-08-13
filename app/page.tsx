@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   NotebookPen,
   PanelRightClose,
+  Pause,
   Play,
   Plus,
   RotateCcw,
@@ -41,7 +42,10 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 
 type Page = "home" | "course" | "all-resources" | "calendar" | "daily-plan" | "recitation" | "question-book";
 type Tab = "Overview" | "Resources" | "Notes" | "Practice" | "Exam";
-type PlanItem = { id: number; title: string; course: string; minutes: number; color: string; short: string; done: boolean };
+type PlanStatus = "未开始" | "专注中" | "已暂停" | "已完成" | "已跳过";
+type PlanMode = "focus" | "practice" | "recitation";
+type PlanItem = { id: number; title: string; course: string; minutes: number; color: string; short: string; status: PlanStatus; mode: PlanMode; source: string; deadline?: string; targetId?: number };
+type FocusLog = { id: number; taskId: number; course: string; title: string; minutes: number; result: string; time: string };
 type Resource = {
   id: number;
   type: string;
@@ -59,9 +63,10 @@ const courses = [
 ];
 
 const initialPlanItems: PlanItem[] = [
-  { id: 1, title: "完成作业 8", course: "概率论", minutes: 25, color: courses[0].color, short: "概", done: false },
-  { id: 2, title: "复习梯度下降笔记", course: "机器学习", minutes: 20, color: courses[2].color, short: "机", done: false },
-  { id: 3, title: "阅读商群章节", course: "抽象代数", minutes: 12, color: courses[1].color, short: "代", done: false },
+  { id: 1, title: "完成作业 8", course: "概率论", minutes: 25, color: courses[0].color, short: "概", status: "未开始", mode: "focus", source: "课程待办", deadline: "今天 17:00" },
+  { id: 2, title: "复习条件期望错题", course: "概率论", minutes: 25, color: courses[0].color, short: "概", status: "未开始", mode: "practice", source: "我的题册", targetId: 1 },
+  { id: 3, title: "重背“什么是马克思主义？”", course: "马克思主义基本原理", minutes: 15, color: "#9a625c", short: "马", status: "未开始", mode: "recitation", source: "背诵辅助" },
+  { id: 4, title: "复习梯度下降笔记", course: "机器学习", minutes: 20, color: courses[2].color, short: "机", status: "未开始", mode: "focus", source: "个人安排" },
 ];
 
 const initialResources: Resource[] = [
@@ -109,6 +114,14 @@ export default function StarDock() {
   const [aiMessage, setAiMessage] = useState(defaultAi);
   const [targetedReview, setTargetedReview] = useState(false);
   const [planItems, setPlanItems] = useState<PlanItem[]>(initialPlanItems);
+  const [focusLogs, setFocusLogs] = useState<FocusLog[]>([
+    { id: 1, taskId: 8, course: "概率论", title: "整理第 07 讲课堂笔记", minutes: 25, result: "已完成", time: "09:35–10:00" },
+  ]);
+  const [questionBookTarget, setQuestionBookTarget] = useState<number | null>(null);
+
+  const addPlanItem = useCallback((item: Omit<PlanItem, "id" | "status">) => {
+    setPlanItems((current) => current.some((plan) => plan.title === item.title && plan.status !== "已完成") ? current : [...current, { ...item, id: Math.max(0, ...current.map((plan) => plan.id)) + 1, status: "未开始" }]);
+  }, []);
 
   const openCourse = useCallback((tab: Tab = "Overview") => {
     setPage("course");
@@ -155,7 +168,7 @@ export default function StarDock() {
         onCalendar={() => setPage("calendar")}
         onDailyPlan={() => setPage("daily-plan")}
         onRecitation={() => setPage("recitation")}
-        onQuestionBook={() => setPage("question-book")}
+        onQuestionBook={() => { setQuestionBookTarget(null); setPage("question-book"); }}
       />
 
       <main className={`main-shell ${page === "course" && aiOpen ? "with-ai" : ""}`}>
@@ -163,9 +176,9 @@ export default function StarDock() {
         {page === "home" && <HomePage onOpenCourse={openCourse} planItems={planItems} onOpenPlan={() => setPage("daily-plan")} />}
         {page === "all-resources" && <AllResourcesPage resources={resources} onCourse={openCourse} onAdd={() => setResourceModal(true)} />}
         {page === "calendar" && <CalendarPage onCourse={openCourse} />}
-        {page === "daily-plan" && <DailyPlanPage items={planItems} setItems={setPlanItems} />}
+        {page === "daily-plan" && <DailyPlanPage items={planItems} setItems={setPlanItems} logs={focusLogs} setLogs={setFocusLogs} onOpenQuestionBook={(id) => { setQuestionBookTarget(id); setPage("question-book"); }} onOpenRecitation={() => setPage("recitation")} />}
         {page === "recitation" && <RecitationAssistant />}
-        {page === "question-book" && <QuestionBookPage onRecitation={() => setPage("recitation")} onAddPlan={(item) => setPlanItems((items) => [...items, { ...item, id: Math.max(0, ...items.map((current) => current.id)) + 1, done: false }])} />}
+        {page === "question-book" && <QuestionBookPage initialSelectedId={questionBookTarget} onRecitation={() => setPage("recitation")} onAddPlan={addPlanItem} />}
         {page === "course" && (
           <CourseWorkspace
             activeTab={activeTab}
@@ -180,6 +193,8 @@ export default function StarDock() {
               setAiOpen(true);
               setAiMessage(message);
             }}
+            onAddPlan={addPlanItem}
+            plannedTitles={planItems.filter((item) => item.status !== "已完成").map((item) => item.title)}
           />
         )}
       </main>
@@ -317,6 +332,8 @@ function CourseWorkspace(props: {
   onAddResource: () => void;
   onWrongAnswer: () => void;
   onAiAction: (message: typeof defaultAi) => void;
+  onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
+  plannedTitles: string[];
 }) {
   const tabs: Tab[] = ["Overview", "Resources", "Notes", "Practice", "Exam"];
   const tabLabels: Record<Tab, string> = { Overview: "课程主页", Resources: "资料", Notes: "笔记", Practice: "练习", Exam: "考试" };
@@ -349,17 +366,19 @@ function CourseWorkspace(props: {
   );
 }
 
-function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction }: {
+function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction, onAddPlan, plannedTitles }: {
   mastery: number;
   targetedReview: boolean;
   resources: Resource[];
   setActiveTab: (tab: Tab) => void;
   onAiAction: (message: typeof defaultAi) => void;
+  onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
+  plannedTitles: string[];
 }) {
   const upcoming = [
-    { date: "今天 17:00", title: "作业 8 截止", detail: "还有 6 道题待提交", urgent: true },
-    { date: "明天 10:00", title: "第 08 讲：大数定律", detail: "教学楼 A203", urgent: false },
-    { date: "8月15日", title: "本周错题回顾", detail: "我的题册 · 5 道题", urgent: false },
+    { date: "今天 17:00", title: "完成作业 8", detail: "还有 6 道题待提交", urgent: true, minutes: 25, mode: "focus" as PlanMode, source: "课程待办" },
+    { date: "明天 10:00", title: "预习第 08 讲：大数定律", detail: "教学楼 A203", urgent: false, minutes: 20, mode: "focus" as PlanMode, source: "课程待办" },
+    { date: "8月15日", title: "复习条件期望错题", detail: "我的题册 · 5 道题", urgent: false, minutes: 25, mode: "practice" as PlanMode, source: "我的题册", targetId: 1 },
   ];
   return (
     <div className="course-home-content content-width">
@@ -369,7 +388,7 @@ function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction
       </section>
 
       <div className="course-home-grid">
-        <section className="course-next-section"><div className="action-section-heading"><div><div className="eyebrow">接下来</div><h2>课程待办</h2></div><span>3 项</span></div><div className="course-next-list">{upcoming.map((item) => <button key={item.title} onClick={() => setActiveTab(item.title.includes("作业") ? "Practice" : "Overview")}><span className={item.urgent ? "urgent" : ""}>{item.date}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><ChevronRight size={14} /></button>)}</div></section>
+        <section className="course-next-section"><div className="action-section-heading"><div><div className="eyebrow">接下来</div><h2>课程待办</h2></div><span>3 项</span></div><div className="course-next-list">{upcoming.map((item) => { const planned = plannedTitles.includes(item.title); return <div className="course-next-item" key={item.title}><span className={item.urgent ? "urgent" : ""}>{item.date}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><button disabled={planned} onClick={() => onAddPlan({ title: item.title, course: "概率论", minutes: item.minutes, color: courses[0].color, short: "概", mode: item.mode, source: item.source, deadline: item.date, targetId: item.targetId })}>{planned ? <><Check size={12} /> 已在计划</> : <><Plus size={12} /> 加入今日计划</>}</button></div>; })}</div></section>
         <section className="course-attention-card"><div className="eyebrow">当前需要关注</div><div className="attention-score"><strong>{mastery}%</strong><span>条件期望</span></div><h2>{targetedReview ? "刚才的练习暴露了塔式法则的混淆。" : "条件期望是当前最值得补齐的概念。"}</h2><p>从第 07 讲例题和作业 6 开始，约 15 分钟。</p><div><button onClick={() => setActiveTab("Practice")}>开始练习</button><button onClick={() => onAiAction({ label: "课程主页", title: "条件期望应该从哪里补起？", body: "建议先回到第 07 讲第 24 页理解塔式法则，再完成作业 6 第 3 题。" })}>问课程 AI</button></div></section>
       </div>
 
@@ -724,7 +743,7 @@ function SearchPalette({ query, setQuery, onClose, onSelect }: { query: string; 
 }
 
 function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?: Tab) => void; planItems: PlanItem[]; onOpenPlan: () => void }) {
-  const completedPlans = planItems.filter((item) => item.done).length;
+  const completedPlans = planItems.filter((item) => item.status === "已完成").length;
   const totalMinutes = planItems.reduce((total, item) => total + item.minutes, 0);
 
   return (
@@ -743,7 +762,7 @@ function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?
         <div className="daily-plan-progress" aria-label={`今日计划已完成 ${completedPlans} 项，共 ${planItems.length} 项`}><span style={{ width: `${planItems.length ? (completedPlans / planItems.length) * 100 : 0}%` }} /></div>
         <div className="mixed-tasks">
           {planItems.slice(0, 3).map((item) => (
-            <button key={item.id} className={item.done ? "complete" : ""} onClick={onOpenPlan}>
+            <button key={item.id} className={item.status === "已完成" ? "complete" : ""} onClick={onOpenPlan}>
               <span className="course-mini" style={{ background: item.color }}>{item.short}</span>
               <span><strong>{item.title}</strong><small>{item.course} · {item.minutes} 分钟</small></span>
               <ChevronRight size={15} />
@@ -755,30 +774,92 @@ function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?
   );
 }
 
-function DailyPlanPage({ items, setItems }: { items: PlanItem[]; setItems: React.Dispatch<React.SetStateAction<PlanItem[]>> }) {
+function DailyPlanPage({ items, setItems, logs, setLogs, onOpenQuestionBook, onOpenRecitation }: { items: PlanItem[]; setItems: React.Dispatch<React.SetStateAction<PlanItem[]>>; logs: FocusLog[]; setLogs: React.Dispatch<React.SetStateAction<FocusLog[]>>; onOpenQuestionBook: (id: number) => void; onOpenRecitation: () => void }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [courseName, setCourseName] = useState(courses[0].name);
   const [minutes, setMinutes] = useState(25);
-  const completed = items.filter((item) => item.done).length;
+  const [view, setView] = useState<"plan" | "focus" | "summary">("plan");
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
+  const [summaryNote, setSummaryNote] = useState("");
+  const completed = items.filter((item) => item.status === "已完成").length;
   const totalMinutes = items.reduce((total, item) => total + item.minutes, 0);
+  const actualMinutes = logs.reduce((total, log) => total + log.minutes, 0);
+  const remainingMinutes = items.filter((item) => item.status !== "已完成" && item.status !== "已跳过").reduce((total, item) => total + item.minutes, 0);
+  const activeItem = items.find((item) => item.id === activeId) ?? null;
+  const nextItem = items.find((item) => item.status === "未开始" || item.status === "已暂停");
+  const elapsedSeconds = 25 * 60 - remainingSeconds;
+  const timerText = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+
+  useEffect(() => {
+    if (view !== "focus" || !running) return;
+    const timer = window.setInterval(() => {
+      setRemainingSeconds((seconds) => {
+        if (seconds <= 1) {
+          window.clearInterval(timer);
+          setRunning(false);
+          setView("summary");
+          return 0;
+        }
+        return seconds - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [running, view]);
 
   const addItem = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const title = draft.trim();
     if (!title) return;
     const selectedCourse = courses.find((course) => course.name === courseName) ?? courses[0];
-    setItems((current) => [...current, { id: Math.max(0, ...current.map((item) => item.id)) + 1, title, course: courseName, minutes, color: selectedCourse.color, short: courseName.slice(0, 1), done: false }]);
+    setItems((current) => [...current, { id: Math.max(0, ...current.map((item) => item.id)) + 1, title, course: courseName, minutes, color: selectedCourse.color, short: courseName.slice(0, 1), status: "未开始", mode: "focus", source: "手动添加" }]);
     setDraft("");
     setComposerOpen(false);
   };
 
+  const startTask = (item: PlanItem) => {
+    if (item.mode === "practice") {
+      setItems((current) => current.map((plan) => plan.id === item.id ? { ...plan, status: "专注中" } : plan));
+      onOpenQuestionBook(item.targetId ?? 1);
+      return;
+    }
+    if (item.mode === "recitation") {
+      setItems((current) => current.map((plan) => plan.id === item.id ? { ...plan, status: "专注中" } : plan));
+      onOpenRecitation();
+      return;
+    }
+    setActiveId(item.id);
+    setRemainingSeconds(25 * 60);
+    setSummaryNote("");
+    setRunning(true);
+    setView("focus");
+    setItems((current) => current.map((plan) => plan.id === item.id ? { ...plan, status: "专注中" } : plan));
+  };
+
+  const finishSummary = (result: "已完成" | "完成一部分" | "还需要继续" | "遇到困难") => {
+    if (!activeItem) return;
+    const spentMinutes = Math.max(1, Math.ceil(elapsedSeconds / 60));
+    setItems((current) => current.map((item) => item.id === activeItem.id ? { ...item, status: result === "已完成" ? "已完成" : "已暂停" } : item));
+    setLogs((current) => [{ id: Date.now(), taskId: activeItem.id, course: activeItem.course, title: activeItem.title, minutes: spentMinutes, result: summaryNote.trim() || result, time: `刚刚 · ${spentMinutes} 分钟` }, ...current]);
+    setView("plan");
+    setActiveId(null);
+  };
+
+  if (view === "focus" && activeItem) return <div className="daily-focus-page">
+    <div className="focus-topline"><div><span>{activeItem.course}</span><strong>{activeItem.title}</strong></div><span>第 1 个专注段 · 25 分钟</span></div>
+    <div className="focus-stage"><div className={`focus-timer ${running ? "running" : "paused"}`} style={{ "--focus-progress": `${(remainingSeconds / (25 * 60)) * 360}deg` } as CSSProperties}><div><strong>{timerText}</strong><span>{running ? "专注中" : "已暂停"}</span></div></div><div className="focus-goal"><span>本段目标</span><strong>{activeItem.title}</strong><small>预计任务总时长 {activeItem.minutes} 分钟 · 来源：{activeItem.source}</small></div><div className="focus-controls"><button onClick={() => { setRunning((value) => !value); setItems((current) => current.map((item) => item.id === activeItem.id ? { ...item, status: running ? "已暂停" : "专注中" } : item)); }}>{running ? <Pause size={15} /> : <Play size={15} />}{running ? "暂停" : "继续"}</button><button className="primary-button" onClick={() => { setRunning(false); setView("summary"); }}><Check size={15} /> 提前完成</button></div><button className="focus-abandon" onClick={() => { setRunning(false); setItems((current) => current.map((item) => item.id === activeItem.id ? { ...item, status: "已跳过" } : item)); setView("plan"); }}>放弃本次专注</button></div>
+  </div>;
+
+  if (view === "summary" && activeItem) return <div className="daily-focus-page focus-summary-page"><div className="focus-summary-mark"><Check size={23} /></div><div className="eyebrow">本次专注完成</div><h1>{Math.max(1, Math.ceil(elapsedSeconds / 60))} 分钟</h1><p>{activeItem.course} · {activeItem.title}</p><section><h2>这次学习完成得怎么样？</h2><div className="focus-result-options">{["已完成", "完成一部分", "还需要继续", "遇到困难"].map((result) => <button key={result} onClick={() => finishSummary(result as "已完成" | "完成一部分" | "还需要继续" | "遇到困难")}>{result}<ChevronRight size={13} /></button>)}</div><textarea value={summaryNote} onChange={(event) => setSummaryNote(event.target.value)} placeholder="可选：记录实际完成内容或遇到的问题……" /></section><button className="focus-summary-back" onClick={() => { setRemainingSeconds(25 * 60); setRunning(true); setView("focus"); }}>继续本次专注</button></div>;
+
   return <div className="standalone-page content-width daily-plan-page">
-    <div className="page-intro row-intro"><div><div className="eyebrow">今天 · 8月12日</div><h1>每日计划</h1><p>把跨课程任务收在一天里，按预计用时推进学习节奏。</p></div><button className="primary-button" onClick={() => setComposerOpen((open) => !open)}><Plus size={14} /> 添加任务</button></div>
-    <section className="daily-plan-overview"><div><span>完成进度</span><strong>{completed}/{items.length}</strong><small>项任务</small></div><div><span>计划用时</span><strong>{totalMinutes}</strong><small>分钟</small></div><div><span>剩余时间</span><strong>{items.filter((item) => !item.done).reduce((total, item) => total + item.minutes, 0)}</strong><small>分钟</small></div><div><span>当前节奏</span><strong>{completed ? "进行中" : "待开始"}</strong><small>今天</small></div></section>
-    {composerOpen && <form className="daily-plan-composer daily-plan-page-composer" onSubmit={addItem}><input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="准备完成什么？" aria-label="任务名称" /><select value={courseName} onChange={(event) => setCourseName(event.target.value)} aria-label="所属课程">{courses.map((course) => <option key={course.name}>{course.name}</option>)}</select><select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} aria-label="预计用时">{[15, 25, 40, 60].map((value) => <option key={value} value={value}>{value} 分钟</option>)}</select><button className="primary-button" type="submit">加入今天</button></form>}
-    <div className="daily-plan-progress large"><span style={{ width: `${items.length ? (completed / items.length) * 100 : 0}%` }} /></div>
-    <section className="daily-plan-list"><div className="daily-plan-list-heading"><div><div className="eyebrow">今日安排</div><h2>按优先顺序完成</h2></div><span>{items.length - completed} 项待完成</span></div>{items.map((item, index) => <button key={item.id} className={item.done ? "complete" : ""} onClick={() => setItems((current) => current.map((plan) => plan.id === item.id ? { ...plan, done: !plan.done } : plan))}><span className="daily-plan-index">{String(index + 1).padStart(2, "0")}</span><span className="course-mini" style={{ background: item.color }}>{item.short}</span><span><strong>{item.title}</strong><small>{item.course} · 预计 {item.minutes} 分钟</small></span><span className="daily-plan-state">{item.done ? <><Check size={13} /> 已完成</> : <><Circle size={13} /> 标记完成</>}</span></button>)}</section>
+    <div className="daily-plan-hero"><div><div className="eyebrow">8月12日 · 星期三</div><h1>今天计划 {items.length} 项学习任务</h1><p>已完成 {completed} 项 · 已专注 {actualMinutes} 分钟 · 剩余约 {remainingMinutes} 分钟</p></div><div><button onClick={() => setComposerOpen((open) => !open)}><Plus size={14} /> 添加任务</button><button className="primary-button" disabled={!nextItem} onClick={() => nextItem && startTask(nextItem)}><Play size={14} /> 开始下一项</button></div></div>
+    <div className="daily-time-progress"><span><i style={{ width: `${totalMinutes ? Math.min(100, (actualMinutes / totalMinutes) * 100) : 0}%` }} /></span><div><strong>已专注 {actualMinutes} 分钟</strong><small>计划 {totalMinutes} 分钟</small></div></div>
+    {composerOpen && <form className="daily-plan-composer daily-plan-page-composer" onSubmit={addItem}><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="准备完成什么？" aria-label="任务名称" /><select value={courseName} onChange={(event) => setCourseName(event.target.value)} aria-label="所属课程">{courses.map((course) => <option key={course.name}>{course.name}</option>)}</select><select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} aria-label="预计用时">{[15, 25, 40, 60].map((value) => <option key={value} value={value}>{value} 分钟</option>)}</select><button className="primary-button" type="submit">加入今天</button></form>}
+    <section className="daily-execution-list"><div className="daily-plan-list-heading"><div><div className="eyebrow">今日安排</div><h2>从一项具体任务开始</h2></div><span>{items.filter((item) => item.status !== "已完成" && item.status !== "已跳过").length} 项待推进</span></div>{items.map((item) => { const action = item.mode === "practice" ? "开始练习" : item.mode === "recitation" ? "开始背诵" : item.status === "已暂停" ? "继续专注" : "开始专注"; return <article key={item.id} className={`daily-execution-item ${item.status}`}><span className="course-mini" style={{ background: item.color }}>{item.short}</span><div><span>{item.course}{item.deadline ? ` · ${item.deadline}` : ""}</span><h3>{item.title}</h3><small>预计 {item.minutes} 分钟 · 来源：{item.source}</small></div><span className="execution-status">{item.status}</span><button disabled={item.status === "已完成" || item.status === "已跳过"} onClick={() => startTask(item)}>{item.status === "已完成" ? <><Check size={13} /> 已完成</> : <>{item.mode === "focus" ? <Play size={13} /> : item.mode === "practice" ? <RotateCcw size={13} /> : <Brain size={13} />}{action}</>}</button></article>; })}</section>
+    <section className="daily-review"><div className="daily-plan-list-heading"><div><div className="eyebrow">当日复盘</div><h2>今天真实完成了什么</h2></div><span>{logs.length} 条学习记录</span></div><div className="daily-log-list">{logs.map((log) => <div key={log.id}><span>{log.time}</span><i style={{ background: courses.find((course) => course.name === log.course)?.color ?? "#9a625c" }} /><span><strong>{log.course} · {log.title}</strong><small>{log.minutes} 分钟 · {log.result}</small></span></div>)}</div></section>
   </div>;
 }
 
@@ -970,8 +1051,8 @@ const questionBookItems = [
   { id: 5, course: "马克思主义基本原理", chapter: "导论", type: "背诵题", title: "马克思主义由哪些基本组成部分构成？", source: "导论课件 · 第 12 页", reason: "主动收藏", status: "已掌握", review: "5 天后复习", color: "#9a625c", kind: "recitation" },
 ];
 
-function QuestionBookPage({ onRecitation, onAddPlan }: { onRecitation: () => void; onAddPlan: (item: Omit<PlanItem, "id" | "done">) => void }) {
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+function QuestionBookPage({ initialSelectedId, onRecitation, onAddPlan }: { initialSelectedId: number | null; onRecitation: () => void; onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void }) {
+  const [selectedId, setSelectedId] = useState<number | null>(initialSelectedId);
   const [courseFilter, setCourseFilter] = useState("全部课程");
   const [statusFilter, setStatusFilter] = useState("全部状态");
   const [practiceOpen, setPracticeOpen] = useState(false);
@@ -983,7 +1064,7 @@ function QuestionBookPage({ onRecitation, onAddPlan }: { onRecitation: () => voi
 
   const openItem = (id: number) => { setSelectedId(id); setPracticeOpen(false); setPracticeAnswer(""); setAnswerRevealed(false); };
   const addToPlan = (item: typeof questionBookItems[number]) => {
-    onAddPlan({ title: item.kind === "recitation" ? `重背：${item.title}` : `复习：${item.title}`, course: item.course, minutes: item.kind === "recitation" ? 15 : 25, color: item.color, short: item.course.slice(0, 1) });
+    onAddPlan({ title: item.kind === "recitation" ? `重背：${item.title}` : `复习：${item.title}`, course: item.course, minutes: item.kind === "recitation" ? 15 : 25, color: item.color, short: item.course.slice(0, 1), mode: item.kind === "recitation" ? "recitation" : "practice", source: "我的题册", targetId: item.id });
     setPlannedId(item.id);
   };
 
