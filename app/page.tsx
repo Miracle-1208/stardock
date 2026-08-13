@@ -20,7 +20,6 @@ import {
   Link2,
   ListChecks,
   Menu,
-  MessageSquareText,
   Mic,
   MoreHorizontal,
   NotebookPen,
@@ -46,14 +45,17 @@ type PlanStatus = "未开始" | "专注中" | "已暂停" | "已完成" | "已�
 type PlanMode = "focus" | "practice" | "recitation";
 type PlanItem = { id: number; title: string; course: string; minutes: number; color: string; short: string; status: PlanStatus; mode: PlanMode; source: string; deadline?: string; targetId?: number };
 type FocusLog = { id: number; taskId: number; course: string; title: string; minutes: number; result: string; time: string };
+type ResourceStatus = "已入库" | "已索引" | "已整理";
 type Resource = {
   id: number;
   type: string;
   title: string;
   detail: string;
   date: string;
-  indexed: boolean;
+  status: ResourceStatus;
 };
+type NoteStage = "library" | "brief" | "searching" | "sources" | "generating" | "draft";
+type NoteWorkflow = { stage: NoteStage; topic: string; resourceIds: number[]; publishedUpdate: boolean };
 
 const courses = [
   { name: "概率论", color: "#6076a8", progress: 68, next: "作业 8 · 今天", exam: "9月5日" },
@@ -64,20 +66,20 @@ const courses = [
 
 const initialPlanItems: PlanItem[] = [
   { id: 1, title: "完成作业 8", course: "概率论", minutes: 25, color: courses[0].color, short: "概", status: "未开始", mode: "focus", source: "课程待办", deadline: "今天 17:00" },
-  { id: 2, title: "复习条件期望错题", course: "概率论", minutes: 25, color: courses[0].color, short: "概", status: "未开始", mode: "practice", source: "我的题册", targetId: 1 },
+  { id: 2, title: "复习条件期望错题", course: "概率论", minutes: 25, color: courses[0].color, short: "概", status: "未开始", mode: "practice", source: "我的题册 · 关联笔记 4.2", targetId: 1 },
   { id: 3, title: "重背“什么是马克思主义？”", course: "马克思主义基本原理", minutes: 15, color: "#9a625c", short: "马", status: "未开始", mode: "recitation", source: "背诵辅助" },
   { id: 4, title: "复习梯度下降笔记", course: "机器学习", minutes: 20, color: courses[2].color, short: "机", status: "未开始", mode: "focus", source: "个人安排" },
 ];
 
 const initialResources: Resource[] = [
-  { id: 1, type: "课件", title: "第 01 讲 — 概率空间", detail: "42 页 · 张教授", date: "8月3日", indexed: true },
-  { id: 2, type: "课件", title: "第 02 讲 — 条件概率", detail: "38 页 · 张教授", date: "8月5日", indexed: true },
-  { id: 3, type: "课件", title: "第 03 讲 — 随机变量", detail: "51 页 · 张教授", date: "8月8日", indexed: true },
-  { id: 4, type: "教材", title: "概率论导论 — 第 4 章", detail: "121–164 页 · 概率分布", date: "8月8日", indexed: true },
-  { id: 5, type: "作业", title: "作业 07", detail: "8 道题 · 8月14日截止", date: "8月10日", indexed: true },
-  { id: 6, type: "往年试卷", title: "2025 年期末试卷", detail: "90 分钟 · 含解析", date: "8月10日", indexed: true },
-  { id: 7, type: "笔记", title: "我的笔记 — 条件期望", detail: "第 07 讲后更新", date: "8月11日", indexed: true },
-  { id: 8, type: "视频", title: "第 07 讲课堂录屏", detail: "1小时18分 · 已生成文字稿", date: "8月11日", indexed: true },
+  { id: 1, type: "课件", title: "第 01 讲 — 概率空间", detail: "42 页 · 张教授", date: "8月3日", status: "已整理" },
+  { id: 2, type: "课件", title: "第 02 讲 — 条件概率", detail: "38 页 · 张教授", date: "8月5日", status: "已整理" },
+  { id: 3, type: "课件", title: "第 03 讲 — 随机变量", detail: "51 页 · 张教授", date: "8月8日", status: "已整理" },
+  { id: 4, type: "教材", title: "概率论导论 — 第 4 章", detail: "121–164 页 · 概率分布", date: "8月8日", status: "已索引" },
+  { id: 5, type: "作业", title: "作业 07", detail: "8 道题 · 8月14日截止", date: "8月10日", status: "已索引" },
+  { id: 6, type: "往年试卷", title: "2025 年期末试卷", detail: "90 分钟 · 含解析", date: "8月10日", status: "已索引" },
+  { id: 7, type: "笔记", title: "我的笔记 — 条件期望", detail: "第 07 讲后更新", date: "8月11日", status: "已整理" },
+  { id: 8, type: "视频", title: "第 07 讲课堂录屏", detail: "1小时18分 · 原始视频", date: "8月11日", status: "已入库" },
 ];
 
 const searchItems = [
@@ -187,6 +189,7 @@ export default function StarDock() {
             mastery={mastery}
             targetedReview={targetedReview}
             resources={resources}
+            setResources={setResources}
             onAddResource={() => setResourceModal(true)}
             onWrongAnswer={markWrongAnswer}
             onAiAction={(message) => {
@@ -195,6 +198,8 @@ export default function StarDock() {
             }}
             onAddPlan={addPlanItem}
             plannedTitles={planItems.filter((item) => item.status !== "已完成").map((item) => item.title)}
+            onOpenRecitation={() => setPage("recitation")}
+            onOpenQuestionBook={() => { setQuestionBookTarget(null); setPage("question-book"); }}
           />
         )}
       </main>
@@ -226,7 +231,7 @@ export default function StarDock() {
           onClose={() => setResourceModal(false)}
           onAdded={(resource) => {
             setResources((current) => [resource, ...current]);
-            setAiMessage({ label: "课程上下文已扩展", title: "新资料已经可以使用。", body: `${resource.title} 已完成索引，并与课程地图、笔记、练习和考试上下文建立连接。` });
+            setAiMessage({ label: "资料已入库", title: "原始资料已安全保存。", body: `${resource.title} 尚未解析。发起课程笔记或专题整理时，Agent 会在同一个任务上下文中检索并处理它。` });
           }}
         />
       )}
@@ -329,14 +334,22 @@ function CourseWorkspace(props: {
   mastery: number;
   targetedReview: boolean;
   resources: Resource[];
+  setResources: React.Dispatch<React.SetStateAction<Resource[]>>;
   onAddResource: () => void;
   onWrongAnswer: () => void;
   onAiAction: (message: typeof defaultAi) => void;
   onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
   plannedTitles: string[];
+  onOpenRecitation: () => void;
+  onOpenQuestionBook: () => void;
 }) {
   const tabs: Tab[] = ["Overview", "Resources", "Notes", "Practice", "Exam"];
   const tabLabels: Record<Tab, string> = { Overview: "课程主页", Resources: "资料", Notes: "笔记", Practice: "练习", Exam: "考试" };
+  const [noteWorkflow, setNoteWorkflow] = useState<NoteWorkflow>({ stage: "library", topic: "条件期望：定义、塔式法则与典型题型", resourceIds: [4, 7, 8], publishedUpdate: false });
+  const startNoteWorkflow = (resourceIds: number[] = []) => {
+    setNoteWorkflow((current) => ({ ...current, stage: resourceIds.length ? "sources" : "brief", resourceIds: resourceIds.length ? resourceIds : current.resourceIds }));
+    props.setActiveTab("Notes");
+  };
   return (
     <div className="course-page">
       <header className="course-header">
@@ -347,8 +360,8 @@ function CourseWorkspace(props: {
             <p>2026 秋季学期 <span>·</span> 张教授 <span>·</span> {props.resourceCount} 份资料</p>
           </div>
           <div className="index-status">
-            <span><span className="status-dot" /> AI 已索引</span>
-            <small>2 小时前更新</small>
+            <span><span className="status-dot" /> 课程笔记 v1.8</span>
+            <small>14/18 份资料已整理</small>
           </div>
         </div>
         <div className="course-tabs" role="tablist">
@@ -357,8 +370,8 @@ function CourseWorkspace(props: {
       </header>
       <div className="tab-stage" key={props.activeTab}>
         {props.activeTab === "Overview" && <Overview {...props} />}
-        {props.activeTab === "Resources" && <ResourcesPage resources={props.resources} onAdd={props.onAddResource} />}
-        {props.activeTab === "Notes" && <NotesPage onAiAction={props.onAiAction} />}
+        {props.activeTab === "Resources" && <ResourcesPage resources={props.resources} onAdd={props.onAddResource} onOrganize={startNoteWorkflow} />}
+        {props.activeTab === "Notes" && <NotesPage resources={props.resources} setResources={props.setResources} workflow={noteWorkflow} setWorkflow={setNoteWorkflow} onAiAction={props.onAiAction} onPractice={() => props.setActiveTab("Practice")} onRecitation={props.onOpenRecitation} onQuestionBook={props.onOpenQuestionBook} onAddPlan={props.onAddPlan} />}
         {props.activeTab === "Practice" && <PracticePage onWrong={props.onWrongAnswer} mastery={props.mastery} targetedReview={props.targetedReview} />}
         {props.activeTab === "Exam" && <ExamPage />}
       </div>
@@ -399,63 +412,100 @@ function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction
   );
 }
 
-function ResourcesPage({ resources, onAdd }: { resources: Resource[]; onAdd: () => void }) {
+function ResourcesPage({ resources, onAdd, onOrganize }: { resources: Resource[]; onAdd: () => void; onOrganize: (resourceIds?: number[]) => void }) {
   const filters = ["全部", "课件", "教材", "作业", "往年试卷", "笔记", "视频"];
   const [filter, setFilter] = useState("全部");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const visible = filter === "全部" ? resources : resources.filter((resource) => resource.type === filter);
+  const allVisibleSelected = visible.length > 0 && visible.every((resource) => selectedIds.includes(resource.id));
   return (
     <div className="resources-content content-width">
-      <div className="page-intro row-intro"><div><div className="eyebrow">课程资料坞</div><h2>课程资料</h2><p>每一份资料都汇入同一个课程上下文。</p></div><button className="primary-button" onClick={onAdd}><Plus size={15} /> 添加资料</button></div>
+      <div className="page-intro row-intro"><div><div className="eyebrow">课程资料库</div><h2>原始资料与整理状态</h2><p>资料入库后保持原样；Agent 只在你发起整理任务时读取、检索和组织内容。</p></div><div className="resource-header-actions"><button onClick={() => onOrganize()}><Sparkles size={14} /> 专题整理</button><button className="primary-button" onClick={onAdd}><Plus size={15} /> 添加资料</button></div></div>
+      <section className="resource-status-guide"><div><span className="resource-state 入库" /> <strong>已入库</strong><small>只保存原始资料，尚未解析</small></div><div><span className="resource-state 索引" /> <strong>已索引</strong><small>曾在 Agent 任务中读取和检索</small></div><div><span className="resource-state 整理" /> <strong>已整理</strong><small>内容已进入确认过的笔记</small></div></section>
       <div className="resource-filters">{filters.map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
-      <div className="resource-list-header"><span>名称</span><span>添加时间</span><span>上下文</span><span /></div>
+      <div className="resource-list-header selectable"><button aria-label={allVisibleSelected ? "取消全选" : "全选当前资料"} className={allVisibleSelected ? "selected" : ""} onClick={() => setSelectedIds(allVisibleSelected ? selectedIds.filter((id) => !visible.some((resource) => resource.id === id)) : [...new Set([...selectedIds, ...visible.map((resource) => resource.id)])])}>{allVisibleSelected && <Check size={11} />}</button><span>名称</span><span>添加时间</span><span>整理状态</span><span /></div>
       <div className="resource-list">
-        {visible.map((resource) => <ResourceRow key={resource.id} resource={resource} />)}
+        {visible.map((resource) => <ResourceRow key={resource.id} resource={resource} selected={selectedIds.includes(resource.id)} onToggle={() => setSelectedIds((ids) => ids.includes(resource.id) ? ids.filter((id) => id !== resource.id) : [...ids, resource.id])} />)}
       </div>
-      {visible.length === 0 && <div className="empty-state"><FolderOpen size={22} /><h3>还没有{filter}</h3><p>添加资料后，它会自动成为课程上下文的一部分。</p></div>}
+      {visible.length === 0 && <div className="empty-state"><FolderOpen size={22} /><h3>还没有{filter}</h3><p>添加资料后，它会先作为未经处理的原始资料保存。</p></div>}
+      {selectedIds.length > 0 && <div className="resource-selection-bar"><span><strong>{selectedIds.length}</strong> 份资料已选择</span><button onClick={() => setSelectedIds([])}>取消</button><button className="primary-button" onClick={() => onOrganize(selectedIds)}><Sparkles size={14} /> 整理为笔记</button></div>}
     </div>
   );
 }
 
-function ResourceRow({ resource }: { resource: Resource }) {
+function ResourceRow({ resource, selected = false, onToggle }: { resource: Resource; selected?: boolean; onToggle?: () => void }) {
   const Icon = resource.type === "视频" ? Play : resource.type === "笔记" ? NotebookPen : resource.type === "课件" ? FileText : File;
   return (
-    <button className="resource-row" onClick={() => alert(`${resource.title}\n\n这份资料已连接到课程 AI 与课程地图。`)}>
+    <div className={`resource-row ${onToggle ? "selectable" : ""} ${selected ? "selected" : ""}`}>
+      {onToggle && <button className="resource-check" aria-label={`${selected ? "取消选择" : "选择"}${resource.title}`} onClick={onToggle}>{selected && <Check size={11} />}</button>}
       <span className="file-icon"><Icon size={17} /></span>
       <span className="resource-name"><strong>{resource.title}</strong><small>{resource.type} · {resource.detail}</small></span>
       <span className="resource-date">{resource.date}</span>
-      <span className="indexed-label"><span className="status-dot" /> 已索引</span>
-      <MoreHorizontal size={16} />
-    </button>
+      <span className={`resource-status ${resource.status}`}><span className="status-dot" /> {resource.status}</span>
+      <button className="resource-more" aria-label={`更多操作：${resource.title}`}><MoreHorizontal size={16} /></button>
+    </div>
   );
 }
 
-function NotesPage({ onAiAction }: { onAiAction: (message: typeof defaultAi) => void }) {
-  const [flashcards, setFlashcards] = useState(false);
-  const [improved, setImproved] = useState(false);
+function NotesPage({ resources, setResources, workflow, setWorkflow, onAiAction, onPractice, onRecitation, onQuestionBook, onAddPlan }: {
+  resources: Resource[];
+  setResources: React.Dispatch<React.SetStateAction<Resource[]>>;
+  workflow: NoteWorkflow;
+  setWorkflow: React.Dispatch<React.SetStateAction<NoteWorkflow>>;
+  onAiAction: (message: typeof defaultAi) => void;
+  onPractice: () => void;
+  onRecitation: () => void;
+  onQuestionBook: () => void;
+  onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
+}) {
+  const [exportOpen, setExportOpen] = useState(false);
+  const selectedResources = resources.filter((resource) => workflow.resourceIds.includes(resource.id));
+  const setStage = (stage: NoteStage) => setWorkflow((current) => ({ ...current, stage }));
+  const toggleResource = (id: number) => setWorkflow((current) => ({ ...current, resourceIds: current.resourceIds.includes(id) ? current.resourceIds.filter((resourceId) => resourceId !== id) : [...current.resourceIds, id] }));
+  const searchSources = () => {
+    if (!workflow.topic.trim()) return;
+    setStage("searching");
+    window.setTimeout(() => setWorkflow((current) => ({ ...current, stage: "sources", resourceIds: [4, 6, 7, 8] })), 900);
+  };
+  const generateDraft = () => {
+    if (!workflow.resourceIds.length) return;
+    setStage("generating");
+    setResources((current) => current.map((resource) => workflow.resourceIds.includes(resource.id) && resource.status === "已入库" ? { ...resource, status: "已索引" } : resource));
+    window.setTimeout(() => setStage("draft"), 1100);
+  };
+  const publishDraft = () => {
+    setResources((current) => current.map((resource) => workflow.resourceIds.includes(resource.id) ? { ...resource, status: "已整理" } : resource));
+    setWorkflow((current) => ({ ...current, stage: "library", publishedUpdate: true }));
+  };
+
+  if (workflow.stage === "brief") return <div className="notes-content content-width note-workbench">
+    <button className="workbench-back" onClick={() => setStage("library")}><ChevronRight size={13} /> 返回课程笔记</button>
+    <header><div className="eyebrow">Agent 专题工作台</div><h2>你想整理什么专题？</h2><p>描述学习目标即可。Agent 会先检索资料库并提出参考资料清单，不会直接开始生成。</p></header>
+    <section className="topic-brief-card"><textarea value={workflow.topic} onChange={(event) => setWorkflow((current) => ({ ...current, topic: event.target.value }))} placeholder="例如：整理条件期望的定义、塔式法则、老师强调内容和往年题型，形成可用于期末复习的专题笔记。" aria-label="专题整理要求" /><div><span><Sparkles size={13} /> Agent 将先说明准备使用哪些资料</span><button className="primary-button" disabled={!workflow.topic.trim()} onClick={searchSources}>检索参考资料 <ArrowRight size={14} /></button></div></section>
+  </div>;
+
+  if (workflow.stage === "searching" || workflow.stage === "generating") return <div className="notes-content content-width note-agent-progress"><div className="generation-orbit"><Brain size={27} /></div><div className="eyebrow">{workflow.stage === "searching" ? "Agent 正在检索资料库" : "Agent 正在生成笔记草稿"}</div><h2>{workflow.stage === "searching" ? `理解“${workflow.topic}”` : `基于 ${workflow.resourceIds.length} 份已确认资料整理`}</h2><p>{workflow.stage === "searching" ? "当前只进行任务内检索和相关性判断，稍后由你确认参考范围。" : "读取原始资料、统一章节结构并保留可追溯引用；不会覆盖课程主笔记。"}</p><div className="generation-steps"><span className="done"><Check size={12} /> {workflow.stage === "searching" ? "理解专题目标" : "读取确认资料"}</span><span className="done"><Check size={12} /> {workflow.stage === "searching" ? "检索候选资料" : "组织章节结构"}</span><span><span className="mini-spinner" /> {workflow.stage === "searching" ? "计算相关性" : "生成带引用草稿"}</span></div></div>;
+
+  if (workflow.stage === "sources") return <div className="notes-content content-width note-source-review">
+    <button className="workbench-back" onClick={() => setStage("brief")}><ChevronRight size={13} /> 修改专题要求</button>
+    <header><div><div className="eyebrow">Agent 检索完成</div><h2>确认本次参考资料</h2><p>我计划围绕“{workflow.topic}”使用以下资料。你可以删除或增加任何一份。</p></div><div><strong>{workflow.resourceIds.length}</strong><span>份已选择</span></div></header>
+    <section className="agent-source-rationale"><Sparkles size={16} /><div><strong>检索判断</strong><p>课堂录屏和个人笔记用于老师表述，教材用于严格定义，往年试卷用于提取考查方式。作业 07 与专题关联较弱，暂未选择。</p></div></section>
+    <div className="note-source-list">{resources.map((resource) => { const selected = workflow.resourceIds.includes(resource.id); return <button key={resource.id} className={selected ? "selected" : ""} onClick={() => toggleResource(resource.id)}><span className="material-check">{selected && <Check size={12} />}</span><span className="file-icon"><FileText size={16} /></span><span><strong>{resource.title}</strong><small>{resource.type} · {resource.detail}</small></span><em>{selected ? "本次使用" : "点击增加"}</em></button>; })}</div>
+    <div className="note-workflow-actions"><button onClick={() => setStage("library")}>取消整理</button><span>未处理的原始资料会在本次生成任务中读取，不会提前解析。</span><button className="primary-button" disabled={!workflow.resourceIds.length} onClick={generateDraft}>确认并生成草稿 <ArrowRight size={14} /></button></div>
+  </div>;
+
+  if (workflow.stage === "draft") return <div className="notes-content content-width note-draft-review">
+    <div className="draft-review-header"><div><span className="breadcrumb">概率论 <ChevronRight size={12} /> 笔记草稿</span><h2>条件期望专题</h2><p>Agent 草稿 · 基于 {selectedResources.length} 份已确认资料 · 尚未写入课程主笔记</p></div><div><button onClick={() => setStage("sources")}>调整资料</button><button className="primary-button" onClick={publishDraft}><Check size={14} /> 发布到课程主笔记</button></div></div>
+    <div className="draft-review-layout"><nav><span>草稿目录</span>{["4.1 条件期望的定义", "4.2 塔式法则", "4.3 老师强调与直观理解", "4.4 往年题型与易错点"].map((item, index) => <button className={index === 1 ? "active" : ""} key={item}>{item}</button>)}</nav><article><div className="draft-block-label"><span>4.2</span><em>建议更新已有章节</em></div><h1>塔式法则</h1><p>当信息逐层减少时，可以通过再次取条件期望消去中间信息。对可积随机变量 X，有：</p><div className="formula">E[E(X | Y)] = E(X)</div><aside className="draft-citation"><strong>老师的表述</strong><p>“先在已知信息下做最好的估计，再把这些估计平均起来，就会回到原来的总体期望。”</p><span>第 07 讲课堂录屏 · 24:18</span></aside><h3>证明思路</h3><p>根据条件期望定义，对 σ(Y) 中任意事件 A，都有积分相等。令 A = Ω，即得到塔式法则。</p><div className="draft-source-chips"><span>教材第 5.2 节</span><span>我的笔记 · 条件期望</span><span>2025 期末 · 第 4 题</span></div><h3>常见错误</h3><p>不能只写“去掉条件”。完整表述需要说明 X 可积，并指出结论来自条件期望的定义。</p></article><aside><div className="eyebrow">审阅摘要</div><strong>6 处新增</strong><span>2 处合并 · 0 个引用冲突</span><div><CheckCircle2 size={14} /><p>公式均有来源</p></div><div><CheckCircle2 size={14} /><p>老师表述保留时间戳</p></div><div><CheckCircle2 size={14} /><p>往年题仅进入题型部分</p></div><button onClick={() => onAiAction({ label: "草稿审阅", title: "为什么这样组织塔式法则？", body: "我将严格定义、老师的直观表述、证明思路和考试易错点分开，并为每一部分保留了来源。" })}><Sparkles size={13} /> 询问本次整理</button></aside></div>
+  </div>;
+
   return (
     <div className="notes-content content-width">
-      <div className="notes-toolbar">
-        <div><span className="breadcrumb">概率论 <ChevronRight size={12} /> 笔记</span><h2>条件期望</h2></div>
-        <div className="note-actions">
-          <button onClick={() => onAiAction({ label: "笔记上下文", title: "可以问任何与这篇笔记有关的问题。", body: "我会结合第 07 讲、教材第 5.2 章、你的笔记和相关作业来回答。" })}><Sparkles size={14} /> 问课程 AI</button>
-          <button className={improved ? "active" : ""} onClick={() => { setImproved(true); onAiAction({ label: "解释已优化", title: "已经补充了更直观的理解。", body: "条件期望，就是在已知 Y 所包含的信息后，对 X 做出的最佳预测。" }); }}><MessageSquareText size={14} /> 优化解释</button>
-          <button className={flashcards ? "active" : ""} onClick={() => setFlashcards(!flashcards)}><GraduationCap size={14} /> 生成闪卡</button>
-        </div>
-      </div>
-      <article className="note-editor">
-        <span className="note-label">定义</span>
-        <p>给定 <i>Y</i> 时 <i>X</i> 的条件期望，是一个关于 <i>Y</i> 所提供信息可测的随机变量。</p>
-        {improved && <aside className="ai-inline"><Sparkles size={14} /><p><strong>直观理解。</strong> 观察 Y 之前，你对 X 有一个估计；观察 Y 之后，这个估计会随新信息改变。E[X | Y] 就是更新后的估计。</p></aside>}
-        <h3>公式</h3>
-        <div className="formula">E[X | Y = y] = ∑<sub>x</sub> x · P(X = x | Y = y)</div>
-        <h3>老师强调</h3>
-        <blockquote>“把条件化理解为可用信息发生了变化，而不是随机变量本身变了。” <span>第 07 讲 · 24:18</span></blockquote>
-        <h3>例子</h3>
-        <p>令 X 为保险总损失，Y 为索赔次数。对 Y 条件化后，可以把发生频率和损失强度分开，从而更容易计算期望损失。</p>
-        <h3>我的笔记</h3>
-        <div className="editable-note" contentEditable suppressContentEditableWarning>当内层条件期望逐步消除信息时，可以使用塔式法则。</div>
-        {flashcards && <div className="flashcard-strip"><div><span>闪卡 1 / 4</span><strong>塔式法则表达了什么？</strong><p>E[E[X | Y]] = E[X]</p></div><button onClick={() => setFlashcards(false)}><X size={15} /></button></div>}
-      </article>
+      <header className="note-library-header"><div><div className="eyebrow">课程知识资产</div><h2>概率论课程笔记</h2><p>用户确认过的主笔记持续吸收课程资料，并稳定导出为 LaTeX。</p></div><div><button onClick={() => setStage("brief")}><Sparkles size={14} /> 专题整理</button><button className="primary-button" onClick={() => setExportOpen(true)}><Upload size={14} /> 导出笔记</button></div></header>
+      {workflow.publishedUpdate && <div className="note-publish-success"><CheckCircle2 size={16} /><span><strong>“条件期望专题”已发布。</strong> {workflow.resourceIds.length} 份参考资料已标记为“已整理”，课程主笔记已更新。</span></div>}
+      <section className="main-note-card"><div><span className="note-book-mark"><BookOpen size={22} /></span><div><span>课程主笔记 · 已发布</span><h3>概率论完整课程笔记</h3><p>7 个章节 · 86 页 · 14/18 份资料已整理 · 最近更新于刚刚</p></div></div><div><span>当前版本</span><strong>v1.8</strong><small>XeLaTeX 编译通过</small></div></section>
+      <div className="note-library-grid"><section><div className="note-section-heading"><div><div className="eyebrow">章节</div><h3>从笔记开始学习</h3></div><span>学习动作均保留章节关联</span></div><div className="note-chapter-list"><article><span>04</span><div><small>随机变量的数字特征</small><h4>条件期望</h4><p>定义、塔式法则、直观理解、典型题型与易错点</p><div className="chapter-actions"><button onClick={onPractice}><GraduationCap size={12} /> 从 4.2 开始练习</button><button onClick={onQuestionBook}><ListChecks size={12} /> 查看关联题册</button><button onClick={() => onAddPlan({ title: "复习课程笔记 4.2：塔式法则", course: "概率论", minutes: 25, color: courses[0].color, short: "概", mode: "focus", source: "课程笔记 · 4.2 塔式法则" })}><Plus size={12} /> 加入每日计划</button></div></div><strong>92%</strong></article><article><span>05</span><div><small>随机变量的收敛</small><h4>大数定律与中心极限定理</h4><p>3 份资料已整理，1 份课堂录屏待更新</p><div className="chapter-actions"><button onClick={onRecitation}><Brain size={12} /> 生成背诵提纲</button></div></div><strong>68%</strong></article></div></section><aside className="note-update-panel"><div className="eyebrow">待更新</div><h3>{resources.some((resource) => resource.status !== "已整理") ? `${resources.filter((resource) => resource.status !== "已整理").length} 份资料尚未进入笔记` : "主笔记已是最新"}</h3><p>{resources.some((resource) => resource.status !== "已整理") ? "这些资料只在资料库中保存或索引，不会自动改写正式笔记。" : "下一份新资料入库后，仍由你决定是否发起整理。"}</p>{resources.filter((resource) => resource.status !== "已整理").slice(0, 3).map((resource) => <div key={resource.id}><span className={`resource-state ${resource.status === "已入库" ? "入库" : "索引"}`} /><span><strong>{resource.title}</strong><small>{resource.status} · {resource.type}</small></span></div>)}<button onClick={() => setStage("brief")}>发起一次整理 <ArrowRight size={13} /></button></aside></div>
+      {exportOpen && <div className="export-panel"><div className="export-panel-header"><div><div className="eyebrow">稳定导出</div><h3>概率论课程笔记 · v1.8</h3><p>所有导出基于当前已发布版本，不会重新调用 Agent 改写内容。</p></div><button onClick={() => setExportOpen(false)} aria-label="关闭导出面板"><X size={16} /></button></div><div className="export-options"><article><FileText size={20} /><span><strong>阅读版 PDF</strong><small>86 页 · 4.8 MB</small></span><button>下载 PDF</button></article><article><FileText size={20} /><span><strong>LaTeX 源码</strong><small>main.tex · UTF-8</small></span><button>下载 .tex</button></article><article><FolderOpen size={20} /><span><strong>完整工程包</strong><small>ZIP · main.tex、images/、references.bib</small></span><button>下载 ZIP</button></article></div><footer><CheckCircle2 size={14} /><span>XeLaTeX 编译通过 · 公式、图片与引用路径完整 · 生成于当前发布版本</span></footer></div>}
     </div>
   );
 }
@@ -504,7 +554,8 @@ function PracticePage({ onWrong, mastery, targetedReview }: { onWrong: () => voi
         <aside className="practice-context">
           <div className="eyebrow">为什么是这道题</div>
           <p>根据你最薄弱的知识点选择，并关联了四份课程资料。</p>
-          <div className="context-source"><span>第 07 讲</span><small>课件第 24–27 页</small></div>
+          <div className="context-source primary"><span>课程主笔记 · 4.2 塔式法则</span><small>本题的知识与讲解入口</small></div>
+          <div className="context-source"><span>第 07 讲</span><small>原始出处 · 课件第 24–27 页</small></div>
           <div className="context-source"><span>作业 6</span><small>你在第 3 题的错误</small></div>
           <div className="mastery-readout"><span>当前掌握度</span><strong>{mastery}%</strong><div><span style={{ width: `${mastery}%` }} /></div></div>
           {targetedReview && <div className="adapted-note"><Sparkles size={13} /> 接下来的题目会加强塔式法则。</div>}
@@ -686,7 +737,7 @@ function CourseAI({ open, onClose, message, setMessage, topic, resourceCount, ta
 
 function AddResourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: (resource: Resource) => void }) {
   const [method, setMethod] = useState("上传文件");
-  const [stage, setStage] = useState<"choose" | "uploading" | "parsing" | "added">("choose");
+  const [stage, setStage] = useState<"choose" | "uploading" | "added">("choose");
   const [value, setValue] = useState("");
   const started = useRef(false);
   const resourceTextInputRef = useRef<HTMLInputElement>(null);
@@ -697,12 +748,11 @@ function AddResourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: 
     if (started.current) return;
     started.current = true;
     setStage("uploading");
-    window.setTimeout(() => setStage("parsing"), 700);
     window.setTimeout(() => {
       const title = method === "上传文件" ? "第 09 讲 — 鞅" : value || (method === "写笔记" ? "新课程笔记" : "已链接的课程资料");
-      onAdded({ id: Date.now(), type: method === "写笔记" ? "笔记" : method === "添加视频" ? "视频" : "课件", title, detail: "刚刚添加 · 已连接课程上下文", date: "刚刚", indexed: true });
+      onAdded({ id: Date.now(), type: method === "写笔记" ? "笔记" : method === "添加视频" ? "视频" : "课件", title, detail: "原始资料 · 尚未处理", date: "刚刚", status: "已入库" });
       setStage("added");
-    }, 1500);
+    }, 900);
   };
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
@@ -713,13 +763,13 @@ function AddResourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: 
             {[{ label: "上传文件", icon: Upload, hint: "PDF、PPTX、DOCX、音频" }, { label: "粘贴链接", icon: Link2, hint: "文章或共享文档" }, { label: "添加视频", icon: Video, hint: "YouTube 或课堂录屏" }, { label: "写笔记", icon: NotebookPen, hint: "在星坞中开始记录" }].map((item) => <button key={item.label} className={method === item.label ? "active" : ""} onClick={() => setMethod(item.label)}><item.icon size={17} /><span><strong>{item.label}</strong><small>{item.hint}</small></span><Check size={14} /></button>)}
           </div>
           {method === "上传文件" ? <label className="drop-zone"><Upload size={22} /><strong>选择文件，或拖到这里</strong><span>最大 100 MB</span><input type="file" onChange={(event) => { if (event.target.files?.length) start(); }} /></label> : <div className="resource-input"><label>{method === "写笔记" ? "笔记标题" : method === "添加视频" ? "视频链接" : "资料链接"}</label><input ref={resourceTextInputRef} value={value} onChange={(event) => setValue(event.target.value)} placeholder={method === "写笔记" ? "例如：8月12日答疑课" : "粘贴链接…"} /></div>}
-          <div className="modal-footer"><p><Sparkles size={13} /> 新资料会自动索引到这门课中。</p><button className="primary-button" onClick={start} disabled={method !== "上传文件" && !value.trim()}>{method === "上传文件" ? "使用示例课件" : method === "写笔记" ? "创建笔记" : "添加到课程"}</button></div>
+          <div className="modal-footer"><p><FolderOpen size={13} /> 这里只保存原始资料，不会自动解析或改写笔记。</p><button className="primary-button" onClick={start} disabled={method !== "上传文件" && !value.trim()}>{method === "上传文件" ? "使用示例课件" : method === "写笔记" ? "保存到资料库" : "添加到资料库"}</button></div>
         </> : <div className="processing-state">
           <div className={`processing-icon ${stage}`} >{stage === "added" ? <Check size={24} /> : <FileText size={24} />}</div>
-          <h3>{stage === "uploading" ? "正在上传" : stage === "parsing" ? "正在理解这份资料" : "已加入课程上下文"}</h3>
-          <p>{stage === "uploading" ? "第 09 讲 — 鞅.pdf" : stage === "parsing" ? "正在提取结构、概念与引用关系…" : "它已经可以在课程 AI、搜索、练习和考试模式中使用。"}</p>
-          <div className="processing-steps"><span className="done"><Check size={12} /> 上传</span><span className={stage === "parsing" || stage === "added" ? "done" : ""}>{stage === "parsing" ? <span className="mini-spinner" /> : <Check size={12} />} 解析</span><span className={stage === "added" ? "done" : ""}>{stage === "added" ? <Check size={12} /> : <Circle size={12} />} 加入课程上下文</span></div>
-          {stage === "added" && <button className="primary-button" onClick={onClose}>查看课程资料</button>}
+          <h3>{stage === "uploading" ? "正在保存原始资料" : "已加入课程资料库"}</h3>
+          <p>{stage === "uploading" ? "第 09 讲 — 鞅.pdf" : "当前状态为“已入库”。只有发起笔记整理任务后，Agent 才会在该任务上下文中读取它。"}</p>
+          <div className="processing-steps"><span className="done"><Check size={12} /> 上传</span><span className={stage === "added" ? "done" : ""}>{stage === "added" ? <Check size={12} /> : <Circle size={12} />} 保存原始文件</span><span><Circle size={12} /> 等待整理任务</span></div>
+          {stage === "added" && <button className="primary-button" onClick={onClose}>返回资料库</button>}
         </div>}
       </div>
     </div>
@@ -873,16 +923,16 @@ const recitationCourses = [
 ];
 
 const recitationMaterials = [
-  { id: 1, type: "复习提纲", title: "《马克思主义基本原理》期末复习提纲", detail: "导论至第七章 · 32 页", updated: "今天更新", recommended: true },
+  { id: 1, type: "课程主笔记", title: "马克思主义基本原理课程笔记", detail: "已发布 · 导论至第七章", updated: "今天更新", recommended: true },
   { id: 2, type: "课堂课件", title: "导论：马克思主义及其鲜明特征", detail: "第 01 讲 · 46 页", updated: "8月8日", recommended: true },
   { id: 3, type: "教材", title: "马克思主义基本原理（2023 年版）", detail: "导论 · 第 1–28 页", updated: "8月3日", recommended: false },
   { id: 4, type: "我的笔记", title: "导论课堂笔记与老师补充重点", detail: "12 个标注 · 6 页", updated: "8月10日", recommended: false },
 ];
 
 const recitationQuestions = [
-  { id: 1, chapter: "导论：马克思主义及其鲜明特征", title: "什么是马克思主义？", points: 7, minutes: 4, source: "复习提纲 · 第 1 题", status: "未背", recommended: true },
-  { id: 2, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义由哪些基本组成部分构成？", points: 3, minutes: 2, source: "导论课件 · 第 12 页", status: "未背", recommended: true },
-  { id: 3, chapter: "导论：马克思主义及其鲜明特征", title: "如何理解马克思主义基本立场、基本观点和基本方法的统一？", points: 5, minutes: 4, source: "复习提纲 · 第 1 题", status: "模糊", recommended: true },
+  { id: 1, chapter: "导论：马克思主义及其鲜明特征", title: "什么是马克思主义？", points: 7, minutes: 4, source: "课程笔记 · 导论 1.1", status: "未背", recommended: true },
+  { id: 2, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义由哪些基本组成部分构成？", points: 3, minutes: 2, source: "课程笔记 · 导论 1.2", status: "未背", recommended: true },
+  { id: 3, chapter: "导论：马克思主义及其鲜明特征", title: "如何理解马克思主义基本立场、基本观点和基本方法的统一？", points: 5, minutes: 4, source: "课程笔记 · 导论 1.3", status: "模糊", recommended: true },
   { id: 4, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义有哪些鲜明特征？", points: 5, minutes: 3, source: "教材 · 第 15–21 页", status: "已掌握", recommended: false },
   { id: 5, chapter: "世界的物质性及发展规律", title: "如何理解世界的物质统一性？", points: 4, minutes: 3, source: "复习提纲 · 第 6 题", status: "未背", recommended: false },
   { id: 6, chapter: "世界的物质性及发展规律", title: "物质与意识的辩证关系是什么？", points: 6, minutes: 4, source: "课堂课件 · 第 38 页", status: "模糊", recommended: true },
@@ -1044,7 +1094,7 @@ function SettingChoice({ icon, title, description, options, value, onChange }: {
 }
 
 const questionBookItems = [
-  { id: 1, course: "概率论", chapter: "条件期望", type: "证明题", title: "设 X、Y 为随机变量，证明 E[E(X|Y)] = E(X)。", source: "作业 6 · 第 3 题", reason: "做错 2 次", status: "模糊", review: "今天复习", color: courses[0].color, kind: "math" },
+  { id: 1, course: "概率论", chapter: "条件期望 · 笔记 4.2", type: "证明题", title: "设 X、Y 为随机变量，证明 E[E(X|Y)] = E(X)。", source: "课程笔记 4.2 · 原题：作业 6 第 3 题", reason: "做错 2 次", status: "模糊", review: "今天复习", color: courses[0].color, kind: "math" },
   { id: 2, course: "马克思主义基本原理", chapter: "导论", type: "简答题", title: "什么是马克思主义？", source: "期末复习提纲 · 第 1 题", reason: "背诵遗漏", status: "需要重背", review: "今天复习", color: "#9a625c", kind: "recitation" },
   { id: 3, course: "机器学习", chapter: "优化方法", type: "计算题", title: "给定损失函数与初始点，完成两轮梯度下降并比较学习率的影响。", source: "实验 4 · 课后题", reason: "使用过提示", status: "未复习", review: "明天复习", color: courses[2].color, kind: "math" },
   { id: 4, course: "抽象代数", chapter: "商群", type: "证明题", title: "证明正规子群 N 的陪集集合 G/N 在自然运算下构成群。", source: "习题集 4 · 第 6 题", reason: "老师重点", status: "已掌握", review: "7 天后复习", color: courses[1].color, kind: "math" },
@@ -1096,7 +1146,7 @@ function QuestionBookPage({ initialSelectedId, onRecitation, onAddPlan }: { init
 }
 
 function AllResourcesPage({ resources, onCourse, onAdd }: { resources: Resource[]; onCourse: (tab?: Tab) => void; onAdd: () => void }) {
-  return <div className="standalone-page content-width"><div className="page-intro row-intro"><div><div className="eyebrow">学期资料坞</div><h1>全部资料</h1><p>汇集 2026 秋季学期中可搜索的课程上下文。</p></div><button className="primary-button" onClick={onAdd}><Plus size={15} /> 添加资料</button></div><div className="global-resource-summary"><div><strong>72</strong><span>份已索引资料</span></div><p>课程 AI 会在每门课的上下文里理解资料，而不是把它们当作散乱的网盘文件。</p></div><div className="resource-list-header"><span>名称</span><span>添加时间</span><span>上下文</span><span /></div><div className="resource-list">{resources.slice(0, 6).map((resource) => <ResourceRow key={resource.id} resource={resource} />)}</div><button className="inline-link" onClick={() => onCourse("Resources")}>打开「概率论」资料坞 <ArrowRight size={14} /></button></div>;
+  return <div className="standalone-page content-width"><div className="page-intro row-intro"><div><div className="eyebrow">学期资料库</div><h1>全部资料</h1><p>统一保存各门课程的原始资料，并清楚区分入库、索引和整理状态。</p></div><button className="primary-button" onClick={onAdd}><Plus size={15} /> 添加资料</button></div><div className="global-resource-summary"><div><strong>72</strong><span>份课程原始资料</span></div><p>资料不会在上传后自动解析。Agent 只在明确的笔记或专题任务中读取并建立上下文。</p></div><div className="resource-list-header"><span>名称</span><span>添加时间</span><span>整理状态</span><span /></div><div className="resource-list">{resources.slice(0, 6).map((resource) => <ResourceRow key={resource.id} resource={resource} />)}</div><button className="inline-link" onClick={() => onCourse("Resources")}>打开「概率论」资料库 <ArrowRight size={14} /></button></div>;
 }
 
 function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
