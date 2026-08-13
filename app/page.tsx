@@ -796,12 +796,75 @@ function SearchPalette({ query, setQuery, onClose, onSelect }: { query: string; 
 }
 
 function HomePage({ onOpenCourse }: { onOpenCourse: (tab?: Tab) => void }) {
+  const [planItems, setPlanItems] = useState([
+    { id: 1, title: "完成作业 8", course: "概率论", minutes: 25, color: courses[0].color, short: "概", done: false },
+    { id: 2, title: "复习梯度下降笔记", course: "机器学习", minutes: 20, color: courses[2].color, short: "机", done: false },
+    { id: 3, title: "阅读商群章节", course: "抽象代数", minutes: 12, color: courses[1].color, short: "代", done: false },
+  ]);
+  const [planComposerOpen, setPlanComposerOpen] = useState(false);
+  const [planDraft, setPlanDraft] = useState("");
+  const [planCourse, setPlanCourse] = useState(courses[0].name);
+  const [planMinutes, setPlanMinutes] = useState(25);
+  const completedPlans = planItems.filter((item) => item.done).length;
+  const totalMinutes = planItems.reduce((total, item) => total + item.minutes, 0);
+  const selectedCourse = courses.find((course) => course.name === planCourse) ?? courses[0];
+
+  const addPlanItem = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = planDraft.trim();
+    if (!title) return;
+    setPlanItems((items) => [
+      ...items,
+      {
+        id: Math.max(0, ...items.map((item) => item.id)) + 1,
+        title,
+        course: planCourse,
+        minutes: planMinutes,
+        color: selectedCourse.color,
+        short: planCourse.slice(0, 1),
+        done: false,
+      },
+    ]);
+    setPlanDraft("");
+    setPlanComposerOpen(false);
+  };
+
   return (
     <div className="standalone-page content-width">
       <div className="home-greeting"><div className="eyebrow">星期三 · 8月12日</div><h1>你的学期</h1><p>下午好，Lucian。专注两个小时，就能让每门课继续保持节奏。</p></div>
       <div className="semester-title"><h2>2026 秋季学期</h2><span>4 门课程</span></div>
       <div className="semester-courses">{courses.map((course) => <button key={course.name} onClick={() => onOpenCourse("Overview")}><span className="home-course-dot" style={{ background: course.color }} /><span className="home-course-name"><strong>{course.name}</strong><small>{course.next}</small></span><span className="home-progress"><span><i style={{ width: `${course.progress}%` }} /></span><small>{course.progress}%</small></span><span className="exam-date"><small>期末</small>{course.exam}</span><ChevronRight size={15} /></button>)}</div>
-      <section className="home-today"><div className="section-heading"><div><div className="eyebrow">今天</div><h2>跨课程学习计划</h2></div><span>3 项任务 · 57 分钟</span></div><div className="mixed-tasks"><button onClick={() => onOpenCourse("Overview")}><span className="course-mini" style={{ background: courses[0].color }}>概</span><span><strong>完成作业 8</strong><small>概率论 · 25 分钟</small></span><ArrowRight size={15} /></button><button><span className="course-mini" style={{ background: courses[2].color }}>机</span><span><strong>复习梯度下降笔记</strong><small>机器学习 · 20 分钟</small></span><ArrowRight size={15} /></button><button><span className="course-mini" style={{ background: courses[1].color }}>代</span><span><strong>阅读商群章节</strong><small>抽象代数 · 12 分钟</small></span><ArrowRight size={15} /></button></div></section>
+      <section className="home-today">
+        <div className="section-heading home-plan-heading">
+          <div><div className="eyebrow">今天 · 8月12日</div><h2>每日计划</h2></div>
+          <div className="daily-plan-actions">
+            <span>{completedPlans}/{planItems.length} 已完成 · {totalMinutes} 分钟</span>
+            <button onClick={() => setPlanComposerOpen((open) => !open)}><Plus size={13} /> 添加任务</button>
+          </div>
+        </div>
+        {planComposerOpen && (
+          <form className="daily-plan-composer" onSubmit={addPlanItem}>
+            <input autoFocus value={planDraft} onChange={(event) => setPlanDraft(event.target.value)} placeholder="准备完成什么？" aria-label="任务名称" />
+            <select value={planCourse} onChange={(event) => setPlanCourse(event.target.value)} aria-label="所属课程">
+              {courses.map((course) => <option key={course.name}>{course.name}</option>)}
+            </select>
+            <select value={planMinutes} onChange={(event) => setPlanMinutes(Number(event.target.value))} aria-label="预计用时">
+              {[15, 25, 40, 60].map((minutes) => <option key={minutes} value={minutes}>{minutes} 分钟</option>)}
+            </select>
+            <button className="primary-button" type="submit">加入今天</button>
+          </form>
+        )}
+        <div className="daily-plan-progress" aria-label={`今日计划已完成 ${completedPlans} 项，共 ${planItems.length} 项`}><span style={{ width: `${planItems.length ? (completedPlans / planItems.length) * 100 : 0}%` }} /></div>
+        <div className="mixed-tasks">
+          {planItems.map((item) => (
+            <button key={item.id} className={item.done ? "complete" : ""} onClick={() => setPlanItems((items) => items.map((current) => current.id === item.id ? { ...current, done: !current.done } : current))}>
+              <span className="course-mini" style={{ background: item.color }}>{item.short}</span>
+              <span><strong>{item.title}</strong><small>{item.course} · {item.minutes} 分钟</small></span>
+              {item.done ? <Check size={15} /> : <Circle size={15} />}
+            </button>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -859,7 +922,6 @@ function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
           <button className="calendar-nav-button" aria-label="下一周"><ChevronRight size={14} /></button>
           <span className="calendar-range">8月10日—8月16日</span>
           <div className="calendar-view-switch" aria-label="日历视图"><button className="active">周</button><button>月</button></div>
-          <button className="primary-button calendar-add-button"><Plus size={14} /> 添加计划</button>
         </div>
       </header>
 
