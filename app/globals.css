@@ -72,7 +72,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [contentedita
 .main-shell { min-height: 100vh; margin-left: 236px; background: var(--paper); transition: margin-right .24s ease; }
 .main-shell.with-ai { margin-right: 352px; }
 .workspace-topbar { min-height: 58px; display: flex; align-items: center; border-bottom: 1px solid var(--line); background: #f7f7f4; }
-.workspace-topbar-inner { width: 100%; display: flex; justify-content: flex-end; padding: 0 40px; }
+.workspace-topbar-inner { width: 100%; display: flex; justify-content: center; padding: 0 40px; }
 .workspace-search-trigger { width: min(100%, 520px); height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 1px solid #deddd7; border-radius: 7px; background: #fff; color: #85857f; text-align: left; cursor: pointer; box-shadow: 0 1px 2px #00000008; transition: border-color .16s ease, box-shadow .16s ease, color .16s ease; }
 .workspace-search-trigger:hover { border-color: #c9cbd0; color: #5f6269; box-shadow: 0 2px 7px #3135410d; }
 .workspace-search-trigger > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
