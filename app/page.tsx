@@ -58,10 +58,10 @@ type NoteStage = "library" | "brief" | "searching" | "sources" | "generating" | 
 type NoteWorkflow = { stage: NoteStage; topic: string; resourceIds: number[]; publishedUpdate: boolean };
 
 const courses = [
-  { name: "概率论", color: "#6076a8", progress: 68, next: "作业 8 · 今天", exam: "9月5日" },
-  { name: "抽象代数", color: "#a76f5b", progress: 54, next: "复习商群", exam: "9月12日" },
-  { name: "机器学习", color: "#638374", progress: 72, next: "实验 5 · 明天", exam: "9月18日" },
-  { name: "宏观经济学", color: "#aa8a4f", progress: 61, next: "阅读第 9 章", exam: "9月21日" },
+  { name: "概率论", color: "#6076a8", organized: 14, total: 18, chapters: 7, next: "作业 8 · 今天", exam: "9月5日" },
+  { name: "抽象代数", color: "#a76f5b", organized: 9, total: 12, chapters: 5, next: "复习商群", exam: "9月12日" },
+  { name: "机器学习", color: "#638374", organized: 11, total: 16, chapters: 6, next: "实验 5 · 明天", exam: "9月18日" },
+  { name: "宏观经济学", color: "#aa8a4f", organized: 8, total: 13, chapters: 4, next: "阅读第 9 章", exam: "9月21日" },
 ];
 
 const initialPlanItems: PlanItem[] = [
@@ -90,18 +90,19 @@ const searchItems = [
   { type: "往年试卷", title: "条件信息下的期望", source: "2025 期末 · 第 4 题" },
 ];
 
-const aiActions = [
-  "解释我最薄弱的知识点",
+const agentActions = [
+  "整理一个专题",
   "查找老师讲过这里的位置",
-  "生成相似练习题",
-  "制定今天的学习计划",
-  "估计期末复习重点",
+  "比较课件与教材的解释",
+  "从当前笔记章节生成练习",
+  "检查草稿引用是否完整",
+  "根据指定章节整理复习材料",
 ];
 
-const defaultAi = {
-  label: "课程脉搏",
-  title: "整体节奏不错，还有一个缺口值得补上。",
-  body: "你在概率分布上的表现很稳定。期末前，条件期望是最值得优先提升的知识点。",
+const defaultAgent = {
+  label: "当前工作区",
+  title: "从课程资料和主笔记开始一项具体任务。",
+  body: "我会先说明准备使用的资料范围，再按你的确认进行检索、整理或生成。",
 };
 
 export default function StarDock() {
@@ -112,9 +113,8 @@ export default function StarDock() {
   const [searchQuery, setSearchQuery] = useState("条件期望");
   const [resourceModal, setResourceModal] = useState(false);
   const [resources, setResources] = useState(initialResources);
-  const [mastery, setMastery] = useState(48);
-  const [aiMessage, setAiMessage] = useState(defaultAi);
-  const [targetedReview, setTargetedReview] = useState(false);
+  const [agentMessage, setAgentMessage] = useState(defaultAgent);
+  const [noteWorkflow, setNoteWorkflow] = useState<NoteWorkflow>({ stage: "library", topic: "条件期望：定义、塔式法则与典型题型", resourceIds: [4, 7, 8], publishedUpdate: false });
   const [planItems, setPlanItems] = useState<PlanItem[]>(initialPlanItems);
   const [focusLogs, setFocusLogs] = useState<FocusLog[]>([
     { id: 1, taskId: 8, course: "概率论", title: "整理第 07 讲课堂笔记", minutes: 25, result: "已完成", time: "09:35–10:00" },
@@ -145,19 +145,6 @@ export default function StarDock() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const markWrongAnswer = () => {
-    if (!targetedReview) {
-      setMastery(42);
-      setTargetedReview(true);
-      setAiMessage({
-        label: "学习模型已更新",
-        title: "我注意到你在条件期望上遇到了困难。",
-        body: "这次错误说明你可能混淆了“对事件条件化”和“对随机变量条件化”。要进行一次 10 分钟的针对性复习吗？",
-      });
-      setAiOpen(true);
-    }
-  };
-
   return (
     <div className="app-shell">
       <Sidebar
@@ -186,39 +173,41 @@ export default function StarDock() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             resourceCount={resources.length + 10}
-            mastery={mastery}
-            targetedReview={targetedReview}
             resources={resources}
             setResources={setResources}
+            noteWorkflow={noteWorkflow}
+            setNoteWorkflow={setNoteWorkflow}
             onAddResource={() => setResourceModal(true)}
-            onWrongAnswer={markWrongAnswer}
-            onAiAction={(message) => {
+            onAgentAction={(message) => {
               setAiOpen(true);
-              setAiMessage(message);
+              setAgentMessage(message);
             }}
             onAddPlan={addPlanItem}
             plannedTitles={planItems.filter((item) => item.status !== "已完成").map((item) => item.title)}
             onOpenRecitation={() => setPage("recitation")}
-            onOpenQuestionBook={() => { setQuestionBookTarget(null); setPage("question-book"); }}
+            onOpenQuestionBook={(id) => { setQuestionBookTarget(id ?? null); setPage("question-book"); }}
           />
         )}
       </main>
 
       {page === "course" && (
         <>
-          <button className="ai-toggle" onClick={() => setAiOpen(!aiOpen)} aria-label={aiOpen ? "关闭课程 AI" : "打开课程 AI"}>
+          <button className="ai-toggle" onClick={() => setAiOpen(!aiOpen)} aria-label={aiOpen ? "关闭课程 Agent" : "打开课程 Agent"}>
             {aiOpen ? <PanelRightClose size={17} /> : <Sparkles size={17} />}
-            <span>{aiOpen ? "收起 AI" : "课程 AI"}</span>
+            <span>{aiOpen ? "收起 Agent" : "课程 Agent"}</span>
           </button>
-          <CourseAI
+          <CourseAgent
             open={aiOpen}
             onClose={() => setAiOpen(false)}
-            message={aiMessage}
-            setMessage={setAiMessage}
-            topic="条件期望"
+            message={agentMessage}
+            setMessage={setAgentMessage}
+            topic="课程笔记 4.2 · 塔式法则"
             resourceCount={resources.length + 10}
-            targetedReview={targetedReview}
-            onOpenPractice={() => openCourse("Practice")}
+            onOpenNoteWorkflow={() => {
+              setNoteWorkflow((current) => ({ ...current, stage: "brief" }));
+              openCourse("Notes");
+              setAiOpen(false);
+            }}
           />
         </>
       )}
@@ -231,7 +220,7 @@ export default function StarDock() {
           onClose={() => setResourceModal(false)}
           onAdded={(resource) => {
             setResources((current) => [resource, ...current]);
-            setAiMessage({ label: "资料已入库", title: "原始资料已安全保存。", body: `${resource.title} 尚未解析。发起课程笔记或专题整理时，Agent 会在同一个任务上下文中检索并处理它。` });
+            setAgentMessage({ label: "资料已入库", title: "原始资料已安全保存。", body: `${resource.title} 尚未解析。发起课程笔记或专题整理时，Agent 会在同一个任务上下文中检索并处理它。` });
           }}
         />
       )}
@@ -331,23 +320,21 @@ function CourseWorkspace(props: {
   activeTab: Tab;
   setActiveTab: (tab: Tab) => void;
   resourceCount: number;
-  mastery: number;
-  targetedReview: boolean;
   resources: Resource[];
   setResources: React.Dispatch<React.SetStateAction<Resource[]>>;
+  noteWorkflow: NoteWorkflow;
+  setNoteWorkflow: React.Dispatch<React.SetStateAction<NoteWorkflow>>;
   onAddResource: () => void;
-  onWrongAnswer: () => void;
-  onAiAction: (message: typeof defaultAi) => void;
+  onAgentAction: (message: typeof defaultAgent) => void;
   onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
   plannedTitles: string[];
   onOpenRecitation: () => void;
-  onOpenQuestionBook: () => void;
+  onOpenQuestionBook: (id?: number) => void;
 }) {
   const tabs: Tab[] = ["Overview", "Resources", "Notes", "Practice", "Exam"];
   const tabLabels: Record<Tab, string> = { Overview: "课程主页", Resources: "资料", Notes: "笔记", Practice: "练习", Exam: "考试" };
-  const [noteWorkflow, setNoteWorkflow] = useState<NoteWorkflow>({ stage: "library", topic: "条件期望：定义、塔式法则与典型题型", resourceIds: [4, 7, 8], publishedUpdate: false });
   const startNoteWorkflow = (resourceIds: number[] = []) => {
-    setNoteWorkflow((current) => ({ ...current, stage: resourceIds.length ? "sources" : "brief", resourceIds: resourceIds.length ? resourceIds : current.resourceIds }));
+    props.setNoteWorkflow((current) => ({ ...current, stage: resourceIds.length ? "sources" : "brief", resourceIds: resourceIds.length ? resourceIds : current.resourceIds }));
     props.setActiveTab("Notes");
   };
   return (
@@ -371,20 +358,17 @@ function CourseWorkspace(props: {
       <div className="tab-stage" key={props.activeTab}>
         {props.activeTab === "Overview" && <Overview {...props} />}
         {props.activeTab === "Resources" && <ResourcesPage resources={props.resources} onAdd={props.onAddResource} onOrganize={startNoteWorkflow} />}
-        {props.activeTab === "Notes" && <NotesPage resources={props.resources} setResources={props.setResources} workflow={noteWorkflow} setWorkflow={setNoteWorkflow} onAiAction={props.onAiAction} onPractice={() => props.setActiveTab("Practice")} onRecitation={props.onOpenRecitation} onQuestionBook={props.onOpenQuestionBook} onAddPlan={props.onAddPlan} />}
-        {props.activeTab === "Practice" && <PracticePage onWrong={props.onWrongAnswer} mastery={props.mastery} targetedReview={props.targetedReview} />}
+        {props.activeTab === "Notes" && <NotesPage resources={props.resources} setResources={props.setResources} workflow={props.noteWorkflow} setWorkflow={props.setNoteWorkflow} onAgentAction={props.onAgentAction} onPractice={() => props.setActiveTab("Practice")} onRecitation={props.onOpenRecitation} onQuestionBook={props.onOpenQuestionBook} onAddPlan={props.onAddPlan} />}
+        {props.activeTab === "Practice" && <PracticePage onAddPlan={props.onAddPlan} onOpenQuestionBook={props.onOpenQuestionBook} />}
         {props.activeTab === "Exam" && <ExamPage />}
       </div>
     </div>
   );
 }
 
-function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction, onAddPlan, plannedTitles }: {
-  mastery: number;
-  targetedReview: boolean;
+function Overview({ resources, setActiveTab, onAddPlan, plannedTitles }: {
   resources: Resource[];
   setActiveTab: (tab: Tab) => void;
-  onAiAction: (message: typeof defaultAi) => void;
   onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
   plannedTitles: string[];
 }) {
@@ -396,18 +380,18 @@ function Overview({ mastery, targetedReview, resources, setActiveTab, onAiAction
   return (
     <div className="course-home-content content-width">
       <section className="continue-learning-card">
-        <div className="continue-copy"><div className="eyebrow">继续学习</div><span>第 07 讲 · 条件期望</span><h2>从塔式法则的例题继续</h2><p>上次看到第 24 页，昨天 21:40。你在例题 3 的条件化步骤停了下来。</p><button className="primary-button" onClick={() => setActiveTab("Resources")}><Play size={14} /> 继续学习</button></div>
-        <div className="continue-preview"><span>第 07 讲</span><strong>E[E(X|Y)] = E(X)</strong><small>条件期望 · 塔式法则</small><i>24 / 38 页</i></div>
+        <div className="continue-copy"><div className="eyebrow">继续学习</div><span>课程主笔记 · 4.2</span><h2>从塔式法则继续阅读</h2><p>上次阅读到“证明思路”，昨天 21:40。入口保留在当前发布版本的具体章节。</p><button className="primary-button" onClick={() => setActiveTab("Notes")}><Play size={14} /> 打开笔记 4.2</button></div>
+        <div className="continue-preview"><span>课程主笔记 · v1.8</span><strong>E[E(X|Y)] = E(X)</strong><small>4.2 条件期望 · 塔式法则</small><i>上次阅读：证明思路</i></div>
       </section>
 
       <div className="course-home-grid">
         <section className="course-next-section"><div className="action-section-heading"><div><div className="eyebrow">接下来</div><h2>课程待办</h2></div><span>3 项</span></div><div className="course-next-list">{upcoming.map((item) => { const planned = plannedTitles.includes(item.title); return <div className="course-next-item" key={item.title}><span className={item.urgent ? "urgent" : ""}>{item.date}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><button disabled={planned} onClick={() => onAddPlan({ title: item.title, course: "概率论", minutes: item.minutes, color: courses[0].color, short: "概", mode: item.mode, source: item.source, deadline: item.date, targetId: item.targetId })}>{planned ? <><Check size={12} /> 已在计划</> : <><Plus size={12} /> 加入今日计划</>}</button></div>; })}</div></section>
-        <section className="course-attention-card"><div className="eyebrow">当前需要关注</div><div className="attention-score"><strong>{mastery}%</strong><span>条件期望</span></div><h2>{targetedReview ? "刚才的练习暴露了塔式法则的混淆。" : "条件期望是当前最值得补齐的概念。"}</h2><p>从第 07 讲例题和作业 6 开始，约 15 分钟。</p><div><button onClick={() => setActiveTab("Practice")}>开始练习</button><button onClick={() => onAiAction({ label: "课程主页", title: "条件期望应该从哪里补起？", body: "建议先回到第 07 讲第 24 页理解塔式法则，再完成作业 6 第 3 题。" })}>问课程 AI</button></div></section>
+        <section className="course-workspace-card"><div className="eyebrow">课程工作台状态</div><h2>资料与笔记正在形成一个可维护的课程资产。</h2><div className="workspace-state-grid"><div><strong>{resources.filter((resource) => resource.status !== "已整理").length}</strong><span>份资料待整理</span></div><div><strong>1</strong><span>篇草稿待审阅</span></div><div><strong>v1.8</strong><span>课程主笔记</span></div><div><strong>4.2</strong><span>上次阅读章节</span></div></div><p>主笔记最近更新于今天 10:26；所有改动都需先经过草稿审阅。</p><div><button onClick={() => setActiveTab("Notes")}>审阅笔记草稿</button><button onClick={() => setActiveTab("Resources")}>查看资料库</button></div></section>
       </div>
 
       <section className="course-recent-section"><div className="action-section-heading"><div><div className="eyebrow">最近加入</div><h2>课程资料</h2></div><button onClick={() => setActiveTab("Resources")}>查看全部 <ArrowRight size={13} /></button></div><div className="course-recent-list">{resources.slice(-3).reverse().map((resource) => <button key={resource.id} onClick={() => setActiveTab("Resources")}><span className="recent-resource-icon"><FileText size={16} /></span><span><strong>{resource.title}</strong><small>{resource.type} · {resource.detail}</small></span><span>{resource.date}</span><ChevronRight size={14} /></button>)}</div></section>
 
-      <section className="course-activity-section"><div className="action-section-heading"><div><div className="eyebrow">最近动态</div><h2>这门课发生了什么</h2></div><span>过去 3 天</span></div><div className="course-activity-list"><div><i /><span><strong>完成第 07 讲课堂笔记</strong><small>昨天 21:40 · 笔记已加入课程上下文</small></span></div><div><i /><span><strong>作业 7 已提交</strong><small>8月11日 · 7/8 题正确</small></span></div><div><i /><span><strong>课程 AI 更新了条件期望掌握状态</strong><small>8月10日 · 来自练习与笔记记录</small></span></div></div></section>
+      <section className="course-activity-section"><div className="action-section-heading"><div><div className="eyebrow">最近动态</div><h2>这门课发生了什么</h2></div><span>过去 3 天</span></div><div className="course-activity-list"><div><i /><span><strong>第 07 讲课堂录屏已入库</strong><small>昨天 21:40 · 原始视频，尚未整理</small></span></div><div><i /><span><strong>条件期望专题草稿已生成</strong><small>8月11日 · 等待用户审阅与发布</small></span></div><div><i /><span><strong>完成作业 7</strong><small>8月10日 · 7/8 题正确</small></span></div></div></section>
     </div>
   );
 }
@@ -447,15 +431,15 @@ function ResourceRow({ resource, selected = false, onToggle }: { resource: Resou
   );
 }
 
-function NotesPage({ resources, setResources, workflow, setWorkflow, onAiAction, onPractice, onRecitation, onQuestionBook, onAddPlan }: {
+function NotesPage({ resources, setResources, workflow, setWorkflow, onAgentAction, onPractice, onRecitation, onQuestionBook, onAddPlan }: {
   resources: Resource[];
   setResources: React.Dispatch<React.SetStateAction<Resource[]>>;
   workflow: NoteWorkflow;
   setWorkflow: React.Dispatch<React.SetStateAction<NoteWorkflow>>;
-  onAiAction: (message: typeof defaultAi) => void;
+  onAgentAction: (message: typeof defaultAgent) => void;
   onPractice: () => void;
   onRecitation: () => void;
-  onQuestionBook: () => void;
+  onQuestionBook: (id?: number) => void;
   onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -496,7 +480,7 @@ function NotesPage({ resources, setResources, workflow, setWorkflow, onAiAction,
 
   if (workflow.stage === "draft") return <div className="notes-content content-width note-draft-review">
     <div className="draft-review-header"><div><span className="breadcrumb">概率论 <ChevronRight size={12} /> 笔记草稿</span><h2>条件期望专题</h2><p>Agent 草稿 · 基于 {selectedResources.length} 份已确认资料 · 尚未写入课程主笔记</p></div><div><button onClick={() => setStage("sources")}>调整资料</button><button className="primary-button" onClick={publishDraft}><Check size={14} /> 发布到课程主笔记</button></div></div>
-    <div className="draft-review-layout"><nav><span>草稿目录</span>{["4.1 条件期望的定义", "4.2 塔式法则", "4.3 老师强调与直观理解", "4.4 往年题型与易错点"].map((item, index) => <button className={index === 1 ? "active" : ""} key={item}>{item}</button>)}</nav><article><div className="draft-block-label"><span>4.2</span><em>建议更新已有章节</em></div><h1>塔式法则</h1><p>当信息逐层减少时，可以通过再次取条件期望消去中间信息。对可积随机变量 X，有：</p><div className="formula">E[E(X | Y)] = E(X)</div><aside className="draft-citation"><strong>老师的表述</strong><p>“先在已知信息下做最好的估计，再把这些估计平均起来，就会回到原来的总体期望。”</p><span>第 07 讲课堂录屏 · 24:18</span></aside><h3>证明思路</h3><p>根据条件期望定义，对 σ(Y) 中任意事件 A，都有积分相等。令 A = Ω，即得到塔式法则。</p><div className="draft-source-chips"><span>教材第 5.2 节</span><span>我的笔记 · 条件期望</span><span>2025 期末 · 第 4 题</span></div><h3>常见错误</h3><p>不能只写“去掉条件”。完整表述需要说明 X 可积，并指出结论来自条件期望的定义。</p></article><aside><div className="eyebrow">审阅摘要</div><strong>6 处新增</strong><span>2 处合并 · 0 个引用冲突</span><div><CheckCircle2 size={14} /><p>公式均有来源</p></div><div><CheckCircle2 size={14} /><p>老师表述保留时间戳</p></div><div><CheckCircle2 size={14} /><p>往年题仅进入题型部分</p></div><button onClick={() => onAiAction({ label: "草稿审阅", title: "为什么这样组织塔式法则？", body: "我将严格定义、老师的直观表述、证明思路和考试易错点分开，并为每一部分保留了来源。" })}><Sparkles size={13} /> 询问本次整理</button></aside></div>
+    <div className="draft-review-layout"><nav><span>草稿目录</span>{["4.1 条件期望的定义", "4.2 塔式法则", "4.3 老师强调与直观理解", "4.4 往年题型与易错点"].map((item, index) => <button className={index === 1 ? "active" : ""} key={item}>{item}</button>)}</nav><article><div className="draft-block-label"><span>4.2</span><em>建议更新已有章节</em></div><h1>塔式法则</h1><p>当信息逐层减少时，可以通过再次取条件期望消去中间信息。对可积随机变量 X，有：</p><div className="formula">E[E(X | Y)] = E(X)</div><aside className="draft-citation"><strong>老师的表述</strong><p>“先在已知信息下做最好的估计，再把这些估计平均起来，就会回到原来的总体期望。”</p><span>第 07 讲课堂录屏 · 24:18</span></aside><h3>证明思路</h3><p>根据条件期望定义，对 σ(Y) 中任意事件 A，都有积分相等。令 A = Ω，即得到塔式法则。</p><div className="draft-source-chips"><span>教材第 5.2 节</span><span>我的笔记 · 条件期望</span><span>2025 期末 · 第 4 题</span></div><h3>常见错误</h3><p>不能只写“去掉条件”。完整表述需要说明 X 可积，并指出结论来自条件期望的定义。</p></article><aside><div className="eyebrow">审阅摘要</div><strong>6 处新增</strong><span>2 处合并 · 0 个引用冲突</span><div><CheckCircle2 size={14} /><p>公式均有来源</p></div><div><CheckCircle2 size={14} /><p>老师表述保留时间戳</p></div><div><CheckCircle2 size={14} /><p>往年题仅进入题型部分</p></div><button onClick={() => onAgentAction({ label: "草稿审阅", title: "为什么这样组织塔式法则？", body: "我将严格定义、老师的直观表述、证明思路和考试易错点分开，并为每一部分保留了来源。" })}><Sparkles size={13} /> 询问本次整理</button></aside></div>
   </div>;
 
   return (
@@ -504,13 +488,16 @@ function NotesPage({ resources, setResources, workflow, setWorkflow, onAiAction,
       <header className="note-library-header"><div><div className="eyebrow">课程知识资产</div><h2>概率论课程笔记</h2><p>用户确认过的主笔记持续吸收课程资料，并稳定导出为 LaTeX。</p></div><div><button onClick={() => setStage("brief")}><Sparkles size={14} /> 专题整理</button><button className="primary-button" onClick={() => setExportOpen(true)}><Upload size={14} /> 导出笔记</button></div></header>
       {workflow.publishedUpdate && <div className="note-publish-success"><CheckCircle2 size={16} /><span><strong>“条件期望专题”已发布。</strong> {workflow.resourceIds.length} 份参考资料已标记为“已整理”，课程主笔记已更新。</span></div>}
       <section className="main-note-card"><div><span className="note-book-mark"><BookOpen size={22} /></span><div><span>课程主笔记 · 已发布</span><h3>概率论完整课程笔记</h3><p>7 个章节 · 86 页 · 14/18 份资料已整理 · 最近更新于刚刚</p></div></div><div><span>当前版本</span><strong>v1.8</strong><small>XeLaTeX 编译通过</small></div></section>
-      <div className="note-library-grid"><section><div className="note-section-heading"><div><div className="eyebrow">章节</div><h3>从笔记开始学习</h3></div><span>学习动作均保留章节关联</span></div><div className="note-chapter-list"><article><span>04</span><div><small>随机变量的数字特征</small><h4>条件期望</h4><p>定义、塔式法则、直观理解、典型题型与易错点</p><div className="chapter-actions"><button onClick={onPractice}><GraduationCap size={12} /> 从 4.2 开始练习</button><button onClick={onQuestionBook}><ListChecks size={12} /> 查看关联题册</button><button onClick={() => onAddPlan({ title: "复习课程笔记 4.2：塔式法则", course: "概率论", minutes: 25, color: courses[0].color, short: "概", mode: "focus", source: "课程笔记 · 4.2 塔式法则" })}><Plus size={12} /> 加入每日计划</button></div></div><strong>92%</strong></article><article><span>05</span><div><small>随机变量的收敛</small><h4>大数定律与中心极限定理</h4><p>3 份资料已整理，1 份课堂录屏待更新</p><div className="chapter-actions"><button onClick={onRecitation}><Brain size={12} /> 生成背诵提纲</button></div></div><strong>68%</strong></article></div></section><aside className="note-update-panel"><div className="eyebrow">待更新</div><h3>{resources.some((resource) => resource.status !== "已整理") ? `${resources.filter((resource) => resource.status !== "已整理").length} 份资料尚未进入笔记` : "主笔记已是最新"}</h3><p>{resources.some((resource) => resource.status !== "已整理") ? "这些资料只在资料库中保存或索引，不会自动改写正式笔记。" : "下一份新资料入库后，仍由你决定是否发起整理。"}</p>{resources.filter((resource) => resource.status !== "已整理").slice(0, 3).map((resource) => <div key={resource.id}><span className={`resource-state ${resource.status === "已入库" ? "入库" : "索引"}`} /><span><strong>{resource.title}</strong><small>{resource.status} · {resource.type}</small></span></div>)}<button onClick={() => setStage("brief")}>发起一次整理 <ArrowRight size={13} /></button></aside></div>
+      <div className="note-library-grid"><section><div className="note-section-heading"><div><div className="eyebrow">章节</div><h3>从笔记开始学习</h3></div><span>学习动作均保留章节关联</span></div><div className="note-chapter-list"><article><span>04</span><div><small>随机变量的数字特征</small><h4>条件期望</h4><p>定义、塔式法则、直观理解、典型题型与易错点</p><div className="chapter-actions"><button onClick={onPractice}><GraduationCap size={12} /> 从 4.2 开始练习</button><button onClick={() => onQuestionBook(1)}><ListChecks size={12} /> 查看关联题册</button><button onClick={() => onAddPlan({ title: "复习课程笔记 4.2：塔式法则", course: "概率论", minutes: 25, color: courses[0].color, short: "概", mode: "focus", source: "课程笔记 · 4.2 塔式法则" })}><Plus size={12} /> 加入每日计划</button></div></div><strong>4 份资料</strong></article><article><span>05</span><div><small>随机变量的收敛</small><h4>大数定律与中心极限定理</h4><p>3 份资料已整理，1 份课堂录屏待更新</p><div className="chapter-actions"><button onClick={onRecitation}><Brain size={12} /> 生成背诵提纲</button></div></div><strong>1 份待更新</strong></article></div></section><aside className="note-update-panel"><div className="eyebrow">待更新</div><h3>{resources.some((resource) => resource.status !== "已整理") ? `${resources.filter((resource) => resource.status !== "已整理").length} 份资料尚未进入笔记` : "主笔记已是最新"}</h3><p>{resources.some((resource) => resource.status !== "已整理") ? "这些资料只在资料库中保存或索引，不会自动改写正式笔记。" : "下一份新资料入库后，仍由你决定是否发起整理。"}</p>{resources.filter((resource) => resource.status !== "已整理").slice(0, 3).map((resource) => <div key={resource.id}><span className={`resource-state ${resource.status === "已入库" ? "入库" : "索引"}`} /><span><strong>{resource.title}</strong><small>{resource.status} · {resource.type}</small></span></div>)}<button onClick={() => setStage("brief")}>发起一次整理 <ArrowRight size={13} /></button></aside></div>
       {exportOpen && <div className="export-panel"><div className="export-panel-header"><div><div className="eyebrow">稳定导出</div><h3>概率论课程笔记 · v1.8</h3><p>所有导出基于当前已发布版本，不会重新调用 Agent 改写内容。</p></div><button onClick={() => setExportOpen(false)} aria-label="关闭导出面板"><X size={16} /></button></div><div className="export-options"><article><FileText size={20} /><span><strong>阅读版 PDF</strong><small>86 页 · 4.8 MB</small></span><button>下载 PDF</button></article><article><FileText size={20} /><span><strong>LaTeX 源码</strong><small>main.tex · UTF-8</small></span><button>下载 .tex</button></article><article><FolderOpen size={20} /><span><strong>完整工程包</strong><small>ZIP · main.tex、images/、references.bib</small></span><button>下载 ZIP</button></article></div><footer><CheckCircle2 size={14} /><span>XeLaTeX 编译通过 · 公式、图片与引用路径完整 · 生成于当前发布版本</span></footer></div>}
     </div>
   );
 }
 
-function PracticePage({ onWrong, mastery, targetedReview }: { onWrong: () => void; mastery: number; targetedReview: boolean }) {
+function PracticePage({ onAddPlan, onOpenQuestionBook }: {
+  onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
+  onOpenQuestionBook: (id?: number) => void;
+}) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [hint, setHint] = useState(false);
@@ -521,14 +508,10 @@ function PracticePage({ onWrong, mastery, targetedReview }: { onWrong: () => voi
     "E[X | Y] = E[Y | X]",
   ];
   const correct = selected === 1;
-  const submit = () => {
-    if (selected === null) return;
-    setSubmitted(true);
-    if (selected !== 1) onWrong();
-  };
+  const resetQuestion = () => { setSelected(null); setSubmitted(false); setHint(false); };
   return (
     <div className="practice-content content-width">
-      <div className="practice-topline"><span>自适应练习</span><span>第 3 / 10 题</span></div>
+      <div className="practice-topline"><span>章节练习 · 课程主笔记 4.2</span><span>第 3 / 10 题</span></div>
       <div className="question-layout">
         <div className="question-main">
           <div className="topic-tag">条件期望 · 塔式法则</div>
@@ -543,22 +526,21 @@ function PracticePage({ onWrong, mastery, targetedReview }: { onWrong: () => voi
           {submitted && (
             <div className={`answer-explanation ${correct ? "correct" : "wrong"}`}>
               <div><span className="result-icon">{correct ? <CheckCircle2 size={18} /> : <X size={18} />}</span><div><strong>{correct ? "回答正确" : "还差一点"}</strong><p>全期望公式说明 E[E[X | Y]] = E[X]。对 Y 下的条件估计再次取平均，就会回到原来的期望。</p></div></div>
-              {!correct && <div className="model-update"><Sparkles size={14} /><div><span>学习模型已更新</span><p>条件期望掌握度 <s>48%</s> <strong>{mastery}%</strong>。今日计划已自动加入针对性复习。</p></div></div>}
+              <div className="attempt-record"><span>本次记录</span><p>{hint ? "提交前查看了结构提示" : "未使用提示"} · 结果仅保留在本题记录中</p></div>
+              {!correct && <div className="practice-result-actions"><button onClick={() => onOpenQuestionBook(1)}>收入题册</button><button onClick={() => onAddPlan({ title: "再做一次：塔式法则证明题", course: "概率论", minutes: 15, color: courses[0].color, short: "概", mode: "practice", source: "章节练习 · 笔记 4.2", targetId: 1 })}>加入每日计划</button><button onClick={resetQuestion}><RotateCcw size={13} /> 再做一次</button></div>}
             </div>
           )}
           <div className="practice-actions">
             <button className="text-button" onClick={() => setHint(!hint)} disabled={submitted}>{hint ? "收起提示" : "查看提示"}</button>
-            {submitted ? <button className="primary-button" onClick={() => { setSelected(null); setSubmitted(false); setHint(false); }}>下一题 <ArrowRight size={15} /></button> : <button className="primary-button" disabled={selected === null} onClick={submit}>提交答案</button>}
+            {submitted ? <button className="primary-button" onClick={resetQuestion}>下一题 <ArrowRight size={15} /></button> : <button className="primary-button" disabled={selected === null} onClick={() => setSubmitted(true)}>提交答案</button>}
           </div>
         </div>
         <aside className="practice-context">
-          <div className="eyebrow">为什么是这道题</div>
-          <p>根据你最薄弱的知识点选择，并关联了四份课程资料。</p>
+          <div className="eyebrow">题目来源</div>
+          <p>本题由用户从课程主笔记 4.2 发起，并保留原始题目出处。</p>
           <div className="context-source primary"><span>课程主笔记 · 4.2 塔式法则</span><small>本题的知识与讲解入口</small></div>
           <div className="context-source"><span>第 07 讲</span><small>原始出处 · 课件第 24–27 页</small></div>
-          <div className="context-source"><span>作业 6</span><small>你在第 3 题的错误</small></div>
-          <div className="mastery-readout"><span>当前掌握度</span><strong>{mastery}%</strong><div><span style={{ width: `${mastery}%` }} /></div></div>
-          {targetedReview && <div className="adapted-note"><Sparkles size={13} /> 接下来的题目会加强塔式法则。</div>}
+          <div className="context-source"><span>作业 6 · 第 3 题</span><small>原始题目出处 · 8月6日</small></div>
         </aside>
       </div>
     </div>
@@ -572,47 +554,46 @@ function ExamPage() {
     setGenerating(true);
     window.setTimeout(() => { setGenerating(false); setGenerated(true); }, 900);
   };
-  const focus = [
-    ["条件分布", "高"],
-    ["中心极限定理", "高"],
-    ["期望", "中"],
-    ["特征函数", "低"],
+  const reviewIndex = [
+    { topic: "条件分布", note: "主笔记 3.4", evidence: "出现在 3 份往年题", source: "第 06、07 讲均有老师标注" },
+    { topic: "中心极限定理", note: "主笔记 5.3", evidence: "出现在 2 份往年题", source: "第 09 讲课件明确标注" },
+    { topic: "期望", note: "主笔记 4.1", evidence: "题册已收录 5 题", source: "作业 5、6 均包含相关题目" },
+    { topic: "特征函数", note: "主笔记 6.2", evidence: "出现在 1 份往年题", source: "第 10 讲课件第 18–26 页" },
   ];
   return (
     <div className="exam-content content-width">
       <div className="exam-hero">
         <div><div className="eyebrow">考试模式</div><h2>期末考试</h2><p>还有 <strong>24 天</strong> · 9月5日 上午 9:00</p></div>
-        <button className="primary-button" onClick={generate} disabled={generating}>{generating ? <><span className="spinner" /> 正在根据课程上下文生成…</> : generated ? <><Check size={15} /> 模拟试卷已就绪</> : <><Sparkles size={15} /> 生成模拟试卷</>}</button>
+        <button className="primary-button" onClick={generate} disabled={generating}>{generating ? <><span className="spinner" /> 正在读取确认资料…</> : generated ? <><Check size={15} /> 模拟试卷已就绪</> : <><Sparkles size={15} /> 按当前资料生成模拟试卷</>}</button>
       </div>
       {generated && (
         <section className="mock-exam-ready">
-          <div className="exam-paper-icon"><FileText size={21} /></div><div><span>根据你的课程生成</span><h3>概率论 · 模拟期末卷 01</h3><p>90 分钟 <span>·</span> 6 道题 <span>·</span> 100 分</p></div><button onClick={() => alert("模拟试卷已进入专注答题模式。")}>开始考试 <ArrowRight size={15} /></button>
+          <div className="exam-paper-icon"><FileText size={21} /></div><div><span>根据 3 类已确认资料生成</span><h3>概率论 · 模拟期末卷 01</h3><p>90 分钟 <span>·</span> 6 道题 <span>·</span> 100 分</p></div><button onClick={() => alert("模拟试卷已进入专注答题模式。")}>开始考试 <ArrowRight size={15} /></button>
         </section>
       )}
       <div className="exam-grid">
         <section className="exam-focus">
-          <div className="section-heading"><div><div className="eyebrow">考试复习重点</div><h3>时间应该花在哪里</h3></div><span className="estimate-badge">AI 估计</span></div>
-          <p className="quiet-copy">基于已上传的课程资料，并非对具体考题的预测。</p>
-          <div className="focus-list">{focus.map(([topic, level]) => <div key={topic}><span>{topic}</span><span className={`focus-level ${level === "高" ? "high" : level === "中" ? "medium" : "low"}`}>{level}</span></div>)}</div>
+          <div className="section-heading"><div><div className="eyebrow">复习材料索引</div><h3>按可追溯来源查看专题</h3></div><span>4 个专题</span></div>
+          <p className="quiet-copy">这里只列出资料中可核对的出现记录，不预测考试概率。</p>
+          <div className="review-index-list">{reviewIndex.map((item) => <div key={item.topic}><span><strong>{item.topic}</strong><small>{item.note}</small></span><span><strong>{item.evidence}</strong><small>{item.source}</small></span></div>)}</div>
         </section>
         <section className="exam-sources">
-          <div className="eyebrow">生成依据</div><h3>一张试卷，四类信号</h3>
-          {["课程资料", "老师强调内容", "往年试卷", "你的薄弱知识点"].map((source, index) => <div key={source}><span>{String(index + 1).padStart(2, "0")}</span><p>{source}</p><Check size={14} /></div>)}
+          <div className="eyebrow">本次生成范围</div><h3>只使用用户确认的资料</h3>
+          {["课程主笔记 v1.8", "第 06–10 讲课件", "2023–2025 往年试卷"].map((source, index) => <div key={source}><span>{String(index + 1).padStart(2, "0")}</span><p>{source}</p><Check size={14} /></div>)}
         </section>
       </div>
     </div>
   );
 }
 
-function CourseAI({ open, onClose, message, setMessage, topic, resourceCount, targetedReview, onOpenPractice }: {
+function CourseAgent({ open, onClose, message, setMessage, topic, resourceCount, onOpenNoteWorkflow }: {
   open: boolean;
   onClose: () => void;
-  message: typeof defaultAi;
-  setMessage: (message: typeof defaultAi) => void;
+  message: typeof defaultAgent;
+  setMessage: (message: typeof defaultAgent) => void;
   topic: string;
   resourceCount: number;
-  targetedReview: boolean;
-  onOpenPractice: () => void;
+  onOpenNoteWorkflow: () => void;
 }) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -626,7 +607,7 @@ function CourseAI({ open, onClose, message, setMessage, topic, resourceCount, ta
     hasSources?: boolean;
   }>>([]);
   const messageId = useRef(0);
-  const lastMessage = useRef<typeof defaultAi | null>(null);
+  const lastMessage = useRef<typeof defaultAgent | null>(null);
   const timers = useRef<number[]>([]);
   const chatEnd = useRef<HTMLDivElement>(null);
 
@@ -654,7 +635,7 @@ function CourseAI({ open, onClose, message, setMessage, topic, resourceCount, ta
 
   useEffect(() => () => timers.current.forEach((timer) => window.clearTimeout(timer)), []);
 
-  const beginTurn = (prompt: string, response: typeof defaultAi) => {
+  const beginTurn = (prompt: string, response: typeof defaultAgent) => {
     if (typing) return;
     setMessages((current) => [...current, { id: nextId(), role: "user", body: prompt }]);
     setTyping(true);
@@ -668,49 +649,51 @@ function CourseAI({ open, onClose, message, setMessage, topic, resourceCount, ta
     }, 1180));
   };
 
-  const responseFor = (action: string): typeof defaultAi => {
+  const responseFor = (action: string): typeof defaultAgent => {
     if (action.includes("查找老师")) {
       return { label: "已连接 4 份资料", title: "条件期望出现在这些位置：", body: "第 07 讲 — 课件第 18–31 页\n教材 — 第 5.2 章\n我的笔记 — 5月12日\n作业 6 — 第 3 题" };
     }
-    if (action.includes("最薄弱")) {
-      return { label: "针对性解释", title: "直观理解条件期望", body: "它是在知道 Y 之后，对 X 做出的最佳估计。这个估计会随 Y 中的信息变化，而对这些估计再次取平均，就会回到 E[X]。" };
+    if (action.includes("比较课件")) {
+      return { label: "已对照 2 份资料", title: "课件强调直观，教材补足严格定义。", body: "第 07 讲第 20–27 页用‘信息变化后的估计’解释条件期望。教材第 5.2 节从 σ(Y) 可测性与积分等式给出定义。" };
     }
-    if (action.includes("相似")) {
-      return { label: "练习已生成", title: "已准备 4 道相关练习。", body: "题目从直接计算逐步过渡到塔式法则，并使用第 07 讲和作业 6 中的例子。" };
+    if (action.includes("生成练习")) {
+      return { label: "基于笔记 4.2", title: "已准备 4 道章节练习。", body: "题目依据课程主笔记 4.2、第 07 讲第 24–27 页与作业 6 第 3 题生成，每题都会保留出处。" };
     }
-    if (action.includes("学习计划")) {
-      return { label: "今天 · 67 分钟", title: "根据你当前状态生成的计划", body: "10 分钟针对性复习\n25 分钟完成作业 8\n20 分钟自适应练习\n12 分钟重看第 07 讲例题" };
+    if (action.includes("检查草稿")) {
+      return { label: "草稿引用检查", title: "当前草稿的 6 处引用均可定位。", body: "公式来自教材第 5.2 节；老师表述保留第 07 讲录屏 24:18；题型引用 2025 期末第 4 题。未发现缺失来源。" };
     }
-    return { label: "AI 估计重点", title: "条件分布与中心极限定理最值得关注。", body: "估计综合了课程资料、老师强调内容、往年试卷和你的学习状态，并不是对具体考题的预测。" };
+    return { label: "复习材料已整理", title: "已按课程主笔记章节组织资料索引。", body: "主笔记 4.1–4.4 对应第 07 讲、教材第 5.2 节、作业 6 第 3 题与 2025 期末第 4 题。你可以继续删减资料范围。" };
   };
 
-  const respond = (action: string) => beginTurn(action, responseFor(action));
+  const respond = (action: string) => {
+    if (action === "整理一个专题") { onOpenNoteWorkflow(); return; }
+    beginTurn(action, responseFor(action));
+  };
 
   const send = () => {
     const prompt = input.trim();
     if (!prompt || typing) return;
     setInput("");
     beginTurn(prompt, {
-      label: `已结合 ${topic} 上下文`,
-      title: "先抓住“可用信息发生变化”这一点",
-      body: "结合课程资料与学习记录，最相关的来源是第 07 讲。条件化之后，我们掌握的信息变了，因此对随机变量的最佳估计也会随之变化。",
+      label: `已检索 ${topic}`,
+      title: "结果已按具体来源组织。",
+      body: "当前使用课程主笔记 4.2、第 07 讲第 18–31 页与教材第 5.2 节。条件化之后，可用信息发生变化，因此相应的条件期望也会变化。",
     });
   };
 
-  const thinkingLabels = ["理解你的问题", `检索 ${resourceCount} 份课程资料`, "结合你的学习记录"];
+  const thinkingLabels = ["理解任务", `检索 ${resourceCount} 份课程资料`, "组织结果与引用"];
   return (
     <aside className={`course-ai ${open ? "open" : ""}`} aria-hidden={!open}>
-      <header className="ai-panel-header"><div><span className="ai-orb"><Sparkles size={14} /></span><div><strong>课程 AI</strong><small>始终理解整门课程</small></div></div><button onClick={onClose} aria-label="关闭课程 AI"><X size={17} /></button></header>
-      <div className="context-stack"><span>上下文</span><div><strong>概率论</strong><small>{resourceCount} 份资料</small></div><div><strong>{topic}</strong><small>当前知识点</small></div><div><strong>学习记录</strong><small>47 次动作</small></div></div>
+      <header className="ai-panel-header"><div><span className="ai-orb"><Sparkles size={14} /></span><div><strong>课程 Agent</strong><small>检索、整理与生成课程内容</small></div></div><button onClick={onClose} aria-label="关闭课程 Agent"><X size={17} /></button></header>
+      <div className="context-stack"><span>当前上下文</span><div><strong>概率论</strong><small>{resourceCount} 份可用资料</small></div><div><strong>课程主笔记 v1.8</strong><small>当前内容资产</small></div><div><strong>{topic}</strong><small>当前章节</small></div></div>
       <div className="ai-scroll">
-        {targetedReview && <button className="proactive-alert" onClick={onOpenPractice}><span><Sparkles size={13} /> 刚刚发现</span><strong>你在条件期望上遇到了困难</strong><p>开始一次 10 分钟的针对性复习吗？</p><span className="alert-action">现在复习 <ArrowRight size={13} /></span></button>}
-        <div className="suggestions"><span>建议操作</span>{aiActions.map((action) => <button key={action} onClick={() => respond(action)} disabled={typing}>{action}<ArrowRight size={13} /></button>)}</div>
+        <div className="suggestions"><span>任务操作</span>{agentActions.map((action) => <button key={action} onClick={() => respond(action)} disabled={typing}>{action}<ArrowRight size={13} /></button>)}</div>
         <div className="chat-thread" aria-live="polite">
           {messages.map((item) => (
             <div className={`chat-message ${item.role}`} key={item.id}>
               <div className="message-author">
                 {item.role === "assistant" && <span className="message-ai-mark"><Sparkles size={10} /></span>}
-                <span>{item.role === "assistant" ? "课程 AI" : "你"}</span>
+                <span>{item.role === "assistant" ? "课程 Agent" : "你"}</span>
               </div>
               <div className="message-bubble">
                 {item.label && <span className="response-label">{item.label}</span>}
@@ -722,8 +705,8 @@ function CourseAI({ open, onClose, message, setMessage, topic, resourceCount, ta
           ))}
           {typing && (
             <div className="ai-thinking" role="status">
-              <div className="thinking-head"><span className="message-ai-mark"><Sparkles size={10} /></span><strong>课程 AI 正在思考</strong><span>{thinkingStep + 1}/3</span></div>
-              <div className="thinking-progress" role="progressbar" aria-label="AI 思考进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={(thinkingStep + 1) * 31}><span style={{ width: `${(thinkingStep + 1) * 31}%` }} /></div>
+              <div className="thinking-head"><span className="message-ai-mark"><Sparkles size={10} /></span><strong>课程 Agent 正在处理</strong><span>{thinkingStep + 1}/3</span></div>
+              <div className="thinking-progress" role="progressbar" aria-label="Agent 处理进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={(thinkingStep + 1) * 31}><span style={{ width: `${(thinkingStep + 1) * 31}%` }} /></div>
               <div className="thinking-steps">{thinkingLabels.map((label, index) => <div className={index < thinkingStep ? "done" : index === thinkingStep ? "current" : ""} key={label}>{index < thinkingStep ? <Check size={11} /> : <span className="thinking-step-dot" />}{label}</div>)}</div>
             </div>
           )}
@@ -800,7 +783,7 @@ function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?
     <div className="standalone-page content-width">
       <div className="home-greeting"><div className="eyebrow">星期三 · 8月12日</div><h1>你的学期</h1><p>下午好，Lucian。专注两个小时，就能让每门课继续保持节奏。</p></div>
       <div className="semester-title"><h2>2026 秋季学期</h2><span>4 门课程</span></div>
-      <div className="semester-courses">{courses.map((course) => <button key={course.name} onClick={() => onOpenCourse("Overview")}><span className="home-course-dot" style={{ background: course.color }} /><span className="home-course-name"><strong>{course.name}</strong><small>{course.next}</small></span><span className="home-progress"><span><i style={{ width: `${course.progress}%` }} /></span><small>{course.progress}%</small></span><span className="exam-date"><small>期末</small>{course.exam}</span><ChevronRight size={15} /></button>)}</div>
+      <div className="semester-courses">{courses.map((course) => <button key={course.name} onClick={() => onOpenCourse("Overview")}><span className="home-course-dot" style={{ background: course.color }} /><span className="home-course-name"><strong>{course.name}</strong><small>{course.next}</small></span><span className="home-asset-state"><strong>{course.organized}/{course.total} 份资料已整理</strong><small>主笔记 {course.chapters} 个章节</small></span><span className="exam-date"><small>期末</small>{course.exam}</span><ChevronRight size={15} /></button>)}</div>
       <section className="home-today">
         <div className="section-heading home-plan-heading">
           <div><div className="eyebrow">今天 · 8月12日</div><h2>每日计划</h2></div>
@@ -923,19 +906,19 @@ const recitationCourses = [
 ];
 
 const recitationMaterials = [
-  { id: 1, type: "课程主笔记", title: "马克思主义基本原理课程笔记", detail: "已发布 · 导论至第七章", updated: "今天更新", recommended: true },
-  { id: 2, type: "课堂课件", title: "导论：马克思主义及其鲜明特征", detail: "第 01 讲 · 46 页", updated: "8月8日", recommended: true },
-  { id: 3, type: "教材", title: "马克思主义基本原理（2023 年版）", detail: "导论 · 第 1–28 页", updated: "8月3日", recommended: false },
-  { id: 4, type: "我的笔记", title: "导论课堂笔记与老师补充重点", detail: "12 个标注 · 6 页", updated: "8月10日", recommended: false },
+  { id: 1, type: "课程主笔记", title: "马克思主义基本原理课程笔记", detail: "已发布 · 导论至第七章", updated: "今天更新" },
+  { id: 2, type: "课堂课件", title: "导论：马克思主义及其鲜明特征", detail: "第 01 讲 · 46 页", updated: "8月8日" },
+  { id: 3, type: "教材", title: "马克思主义基本原理（2023 年版）", detail: "导论 · 第 1–28 页", updated: "8月3日" },
+  { id: 4, type: "我的笔记", title: "导论课堂笔记与老师补充重点", detail: "12 个标注 · 6 页", updated: "8月10日" },
 ];
 
 const recitationQuestions = [
-  { id: 1, chapter: "导论：马克思主义及其鲜明特征", title: "什么是马克思主义？", points: 7, minutes: 4, source: "课程笔记 · 导论 1.1", status: "未背", recommended: true },
-  { id: 2, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义由哪些基本组成部分构成？", points: 3, minutes: 2, source: "课程笔记 · 导论 1.2", status: "未背", recommended: true },
-  { id: 3, chapter: "导论：马克思主义及其鲜明特征", title: "如何理解马克思主义基本立场、基本观点和基本方法的统一？", points: 5, minutes: 4, source: "课程笔记 · 导论 1.3", status: "模糊", recommended: true },
-  { id: 4, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义有哪些鲜明特征？", points: 5, minutes: 3, source: "教材 · 第 15–21 页", status: "已掌握", recommended: false },
-  { id: 5, chapter: "世界的物质性及发展规律", title: "如何理解世界的物质统一性？", points: 4, minutes: 3, source: "复习提纲 · 第 6 题", status: "未背", recommended: false },
-  { id: 6, chapter: "世界的物质性及发展规律", title: "物质与意识的辩证关系是什么？", points: 6, minutes: 4, source: "课堂课件 · 第 38 页", status: "模糊", recommended: true },
+  { id: 1, chapter: "导论：马克思主义及其鲜明特征", title: "什么是马克思主义？", points: 7, minutes: 4, source: "课程笔记 · 导论 1.1", status: "未背" },
+  { id: 2, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义由哪些基本组成部分构成？", points: 3, minutes: 2, source: "课程笔记 · 导论 1.2", status: "未背" },
+  { id: 3, chapter: "导论：马克思主义及其鲜明特征", title: "如何理解马克思主义基本立场、基本观点和基本方法的统一？", points: 5, minutes: 4, source: "课程笔记 · 导论 1.3", status: "需要重背" },
+  { id: 4, chapter: "导论：马克思主义及其鲜明特征", title: "马克思主义有哪些鲜明特征？", points: 5, minutes: 3, source: "教材 · 第 15–21 页", status: "已完成" },
+  { id: 5, chapter: "世界的物质性及发展规律", title: "如何理解世界的物质统一性？", points: 4, minutes: 3, source: "复习提纲 · 第 6 题", status: "未背" },
+  { id: 6, chapter: "世界的物质性及发展规律", title: "物质与意识的辩证关系是什么？", points: 6, minutes: 4, source: "课堂课件 · 第 38 页", status: "需要重背" },
 ];
 
 function RecitationAssistant() {
@@ -979,8 +962,8 @@ function RecitationAssistant() {
   return (
     <div className="recitation-page">
       <header className="recitation-hero">
-        <div><div className="eyebrow">AI 学习工作流</div><h1>背诵辅助</h1><p>从课程资料生成背诵题，让 AI 一次问一个，并针对遗漏继续追问。</p></div>
-        <div className="recitation-history"><span>最近一次</span><strong>马克思主义基本原理</strong><small>6 道题 · 关键点覆盖率 76%</small></div>
+        <div><div className="eyebrow">Agent 学习工作流</div><h1>背诵辅助</h1><p>从用户确认的课程资料生成背诵题，让 Agent 一次问一个，并对照本轮回答的关键点。</p></div>
+        <div className="recitation-history"><span>最近一次</span><strong>马克思主义基本原理</strong><small>6 道题 · 本轮关键点覆盖 76%</small></div>
       </header>
 
       <div className="recitation-steps" aria-label="背诵流程">
@@ -1005,11 +988,11 @@ function RecitationAssistant() {
             </div>
           </section>
           <section className="recitation-material-section">
-            <div className="recitation-section-heading"><div><span>第二步</span><h2>选择资料范围</h2></div><p>AI 只会根据选中的课程资料生成题目和答案要点。</p></div>
+            <div className="recitation-section-heading"><div><span>第二步</span><h2>选择资料范围</h2></div><p>Agent 只会根据选中的课程资料生成题目和参考关键点。</p></div>
             <div className="recitation-material-list">
               {recitationMaterials.map((material) => {
                 const selected = materialIds.includes(material.id);
-                return <button key={material.id} className={selected ? "selected" : ""} onClick={() => setMaterialIds((ids) => selected ? ids.filter((id) => id !== material.id) : [...ids, material.id])}><span className="material-check">{selected && <Check size={12} />}</span><span className="material-icon"><FileText size={16} /></span><span><strong>{material.title}</strong><small>{material.type} · {material.detail}</small></span>{material.recommended && <em><Sparkles size={11} /> 推荐</em>}<small>{material.updated}</small></button>;
+                return <button key={material.id} className={selected ? "selected" : ""} onClick={() => setMaterialIds((ids) => selected ? ids.filter((id) => id !== material.id) : [...ids, material.id])}><span className="material-check">{selected && <Check size={12} />}</span><span className="material-icon"><FileText size={16} /></span><span><strong>{material.title}</strong><small>{material.type} · {material.detail}</small></span>{material.type === "课程主笔记" && <em><BookOpen size={11} /> 主笔记</em>}<small>{material.updated}</small></button>;
               })}
             </div>
           </section>
@@ -1019,19 +1002,19 @@ function RecitationAssistant() {
 
       {stage === "generating" && (
         <div className="recitation-stage recitation-generating">
-          <div className="generation-orbit"><Brain size={27} /></div><div className="eyebrow">正在整理课程上下文</div><h2>从 {materialIds.length} 份资料中生成背诵题</h2><p>AI 正在识别章节结构、合并重复知识点，并把每道题关联到答案要点与原文出处。</p>
+          <div className="generation-orbit"><Brain size={27} /></div><div className="eyebrow">Agent 正在整理课程上下文</div><h2>从 {materialIds.length} 份资料中生成背诵题</h2><p>Agent 正在识别章节结构、合并重复知识点，并把每道题关联到参考关键点与原文出处。</p>
           <div className="generation-steps"><span className="done"><Check size={12} /> 识别章节结构</span><span className="done"><Check size={12} /> 提取可考知识点</span><span><span className="mini-spinner" /> 合并问题与关联出处</span></div>
         </div>
       )}
 
       {stage === "questions" && (
         <div className="recitation-stage">
-          <div className="recitation-stage-title"><div><div className="eyebrow">马克思主义基本原理 · 已生成 6 道题</div><h2>选择本次要背的题目</h2><p>先审阅 AI 生成的题目，再决定今天背哪些。</p></div><div className="question-quick-actions"><button onClick={() => setQuestionIds(recitationQuestions.filter((question) => question.recommended).map((question) => question.id))}><Sparkles size={12} /> 选择 AI 推荐</button><button onClick={() => setQuestionIds(recitationQuestions.map((question) => question.id))}>全选</button><button onClick={() => setQuestionIds([])}>清空</button></div></div>
+          <div className="recitation-stage-title"><div><div className="eyebrow">马克思主义基本原理 · 已生成 6 道题</div><h2>选择本次要背的题目</h2><p>先审阅 Agent 生成的题目，再决定今天背哪些。</p></div><div className="question-quick-actions"><button onClick={() => setQuestionIds(recitationQuestions.filter((question) => question.source.startsWith("课程笔记")).map((question) => question.id))}><BookOpen size={12} /> 选择课程主笔记题目</button><button onClick={() => setQuestionIds(recitationQuestions.map((question) => question.id))}>全选</button><button onClick={() => setQuestionIds([])}>清空</button></div></div>
           {[...new Set(recitationQuestions.map((question) => question.chapter))].map((chapter) => (
             <section className="question-group" key={chapter}><div className="question-group-title"><div><span>章节</span><h3>{chapter}</h3></div><button onClick={() => { const chapterIds = recitationQuestions.filter((question) => question.chapter === chapter).map((question) => question.id); setQuestionIds((ids) => [...new Set([...ids, ...chapterIds])]); }}>全选本章</button></div>
               {recitationQuestions.filter((question) => question.chapter === chapter).map((question) => {
                 const selected = questionIds.includes(question.id);
-                return <button key={question.id} className={`generated-question ${selected ? "selected" : ""}`} onClick={() => setQuestionIds((ids) => selected ? ids.filter((id) => id !== question.id) : [...ids, question.id])}><span className="question-check">{selected && <Check size={12} />}</span><span><strong>{question.title}</strong><small>{question.source} · {question.points} 个关键点 · 约 {question.minutes} 分钟</small></span>{question.recommended && <em>AI 推荐</em>}<i className={`question-status ${question.status}`}>{question.status}</i></button>;
+                return <button key={question.id} className={`generated-question ${selected ? "selected" : ""}`} onClick={() => setQuestionIds((ids) => selected ? ids.filter((id) => id !== question.id) : [...ids, question.id])}><span className="question-check">{selected && <Check size={12} />}</span><span><strong>{question.title}</strong><small>{question.source} · {question.points} 个关键点 · 约 {question.minutes} 分钟</small></span>{question.source.startsWith("课程笔记") && <em>来自主笔记</em>}<i className={`question-status ${question.status}`}>{question.status}</i></button>;
               })}
             </section>
           ))}
@@ -1043,9 +1026,9 @@ function RecitationAssistant() {
         <div className="recitation-stage recitation-settings-stage">
           <div className="recitation-stage-title"><div><div className="eyebrow">开始前的最后一步</div><h2>设置这轮背诵</h2><p>{questionIds.length} 道题，预计 {totalMinutes} 分钟。默认采用适合政治课的关键点检查。</p></div></div>
           <div className="recitation-setting-list">
-            <SettingChoice icon={<ListChecks size={17} />} title="提问顺序" description="决定 AI 下一题问什么" options={["按章节顺序", "随机提问", "薄弱题优先"]} value={order} onChange={setOrder} />
+            <SettingChoice icon={<ListChecks size={17} />} title="提问顺序" description="决定 Agent 下一题问什么" options={["按章节顺序", "随机提问", "需要重背优先"]} value={order} onChange={setOrder} />
             <SettingChoice icon={<Mic size={17} />} title="回答方式" description="展示原型不会调用真实语音识别" options={["文字回答", "口头自测"]} value={answerMode} onChange={setAnswerMode} />
-            <SettingChoice icon={<SlidersHorizontal size={17} />} title="反馈标准" description="AI 如何判断回答是否完整" options={["覆盖主要意思", "关键点完整", "考试表述严格"]} value={standard} onChange={setStandard} />
+            <SettingChoice icon={<SlidersHorizontal size={17} />} title="反馈标准" description="按参考关键点对照本次回答" options={["覆盖主要意思", "关键点完整", "考试表述严格"]} value={standard} onChange={setStandard} />
           </div>
           <div className="recitation-action-bar"><button className="text-button" onClick={() => setStage("questions")}><ChevronRight size={13} /> 返回选择题目</button><div><strong>{questionIds.length}</strong><span>道题</span><small>{order} · {standard}</small></div><button className="primary-button" onClick={startSession}>开始背诵 <ArrowRight size={14} /></button></div>
         </div>
@@ -1055,7 +1038,7 @@ function RecitationAssistant() {
         <div className="recitation-stage recitation-session-stage">
           <div className="session-topline"><div><span>马克思主义基本原理</span><strong>{currentQuestion.chapter}</strong></div><div><span>第 {questionIndex + 1} / {selectedQuestions.length} 题</span><button onClick={() => setStage("summary")}>结束本轮</button></div></div>
           <div className="session-progress"><span style={{ width: `${((questionIndex + 1) / selectedQuestions.length) * 100}%` }} /></div>
-          <div className="question-focus"><div className="eyebrow">AI 提问</div><h2>{currentQuestion.title}</h2><p>请尽量脱离资料，用自己的语言完整复述。提交后 AI 会按关键点检查，而不只判断字面是否一致。</p>
+          <div className="question-focus"><div className="eyebrow">Agent 提问</div><h2>{currentQuestion.title}</h2><p>请尽量脱离资料，用自己的语言完整复述。提交后只对照本题参考关键点，不推断课程整体水平。</p>
             {hintOpen && <div className="recitation-hint"><Sparkles size={14} /><div><strong>答题结构提示</strong><span>可以从总体定义、基本组成，以及基本立场、观点和方法的有机统一三个层次回答。</span></div></div>}
             {answerMode === "文字回答" ? <textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="在这里写下你的回答……" aria-label="背诵回答" /> : <button className="voice-answer" onClick={() => setAnswer("马克思主义是由马克思和恩格斯创立并不断发展的科学理论体系……")}><Mic size={21} /><span>{answer ? "已完成一次模拟口述" : "点击开始口述"}</span><small>展示模式 · 不会调用麦克风</small></button>}
             <div className="session-actions"><button onClick={() => setHintOpen(true)}>给一点提示</button><button onClick={() => { setHintOpen(true); setAnswer(""); }}>暂时不会</button><button className="primary-button" disabled={!answer.trim()} onClick={() => setStage("feedback")}>提交回答</button></div>
@@ -1065,23 +1048,23 @@ function RecitationAssistant() {
 
       {stage === "feedback" && currentQuestion && (
         <div className="recitation-stage recitation-feedback-stage">
-          <div className="feedback-heading"><div><div className="eyebrow">第 {questionIndex + 1} 题 · AI 答案诊断</div><h2>主干已经答出，还有两个关键点需要补全。</h2><p>你说明了创立者、科学理论体系和三个组成部分，但社会发展目标与内在统一关系还不完整。</p></div><div className="coverage-score"><strong>72</strong><span>%</span><small>关键点覆盖率</small></div></div>
+          <div className="feedback-heading"><div><div className="eyebrow">第 {questionIndex + 1} 题 · 本次回答对照</div><h2>主干已经答出，还有两个参考关键点未覆盖。</h2><p>你说明了创立者、科学理论体系和三个组成部分；以下仅对照本题参考答案结构。</p></div><div className="coverage-score"><strong>72</strong><span>%</span><small>本轮关键点覆盖</small></div></div>
           <div className="answer-diagnostic">
             <div className="diagnostic-row covered"><CheckCircle2 size={16} /><span><strong>创立与发展</strong><small>由马克思、恩格斯创立，并由后继者不断发展</small></span><em>已覆盖</em></div>
             <div className="diagnostic-row covered"><CheckCircle2 size={16} /><span><strong>基本组成</strong><small>马克思主义哲学、政治经济学和科学社会主义</small></span><em>已覆盖</em></div>
             <div className="diagnostic-row partial"><Circle size={16} /><span><strong>研究与发展规律</strong><small>需要补充自然、社会和人类思维发展的一般规律</small></span><em>不完整</em></div>
             <div className="diagnostic-row missing"><Circle size={16} /><span><strong>最终目标与内在统一</strong><small>未提及人的解放、全面发展，以及基本立场、观点和方法的有机统一</small></span><em>未提及</em></div>
           </div>
-          <div className="follow-up-card"><div><Sparkles size={15} /><span>AI 针对遗漏追问</span></div><h3>马克思主义关于社会发展方向和人的最终目标，核心表述是什么？</h3><p>先在心里回答这一小问，再回到完整定义，会更容易形成稳定的答题结构。</p></div>
-          <div className="recitation-action-bar"><button className="text-button" onClick={() => setStage("session")}><RotateCcw size={13} /> 再完整回答一次</button><div><strong>{questionIndex + 1}</strong><span>/ {selectedQuestions.length}</span><small>本题已完成诊断</small></div><button className="primary-button" onClick={nextQuestion}>{questionIndex === selectedQuestions.length - 1 ? "查看本轮总结" : "下一题"} <ArrowRight size={14} /></button></div>
+          <div className="follow-up-card"><div><Sparkles size={15} /><span>针对本次遗漏追问</span></div><h3>马克思主义关于社会发展方向和人的最终目标，核心表述是什么？</h3><p>先在心里回答这一小问，再回到完整定义；该记录只影响本题的“需要重背”状态。</p></div>
+          <div className="recitation-action-bar"><button className="text-button" onClick={() => setStage("session")}><RotateCcw size={13} /> 再完整回答一次</button><div><strong>{questionIndex + 1}</strong><span>/ {selectedQuestions.length}</span><small>本题回答已记录</small></div><button className="primary-button" onClick={nextQuestion}>{questionIndex === selectedQuestions.length - 1 ? "查看本轮总结" : "下一题"} <ArrowRight size={14} /></button></div>
         </div>
       )}
 
       {stage === "summary" && (
         <div className="recitation-stage recitation-summary-stage">
           <div className="summary-mark"><Check size={24} /></div><div className="eyebrow">本轮背诵完成</div><h2>你已经建立了第一轮答案结构。</h2><p>独立复述比直接查看答案更有效。下一轮优先补齐遗漏的目标表述和概念关系。</p>
-          <div className="summary-stats"><div><strong>{Math.max(1, questionIndex)}</strong><span>独立完整</span></div><div><strong>1</strong><span>提示后完成</span></div><div><strong>1</strong><span>需要重背</span></div><div><strong>76%</strong><span>平均覆盖率</span></div></div>
-          <section className="summary-review"><div><span>建议重背</span><h3>什么是马克思主义？</h3><p>重点补充“社会主义代替资本主义、最终实现共产主义”和“基本立场、观点、方法的有机统一”。</p></div><button onClick={() => { setQuestionIds([1]); setStage("settings"); }}>只重背这道题 <ArrowRight size={13} /></button></section>
+          <div className="summary-stats"><div><strong>{Math.max(1, questionIndex)}</strong><span>独立完整</span></div><div><strong>1</strong><span>提示后完成</span></div><div><strong>1</strong><span>需要重背</span></div><div><strong>76%</strong><span>本轮关键点覆盖</span></div></div>
+          <section className="summary-review"><div><span>需要重背</span><h3>什么是马克思主义？</h3><p>本轮未覆盖“社会主义代替资本主义、最终实现共产主义”和“基本立场、观点、方法的有机统一”。</p></div><button onClick={() => { setQuestionIds([1]); setStage("settings"); }}>只重背这道题 <ArrowRight size={13} /></button></section>
           <div className="summary-actions"><button onClick={() => setStage("questions")}>返回题目列表</button><button onClick={() => alert("已加入明日计划：重背“什么是马克思主义？” · 10 分钟")}>加入明日计划</button><button className="primary-button" onClick={() => { setQuestionIndex(0); setStage("settings"); }}>再来一轮</button></div>
         </div>
       )}
@@ -1097,8 +1080,8 @@ const questionBookItems = [
   { id: 1, course: "概率论", chapter: "条件期望 · 笔记 4.2", type: "证明题", title: "设 X、Y 为随机变量，证明 E[E(X|Y)] = E(X)。", source: "课程笔记 4.2 · 原题：作业 6 第 3 题", reason: "做错 2 次", status: "模糊", review: "今天复习", color: courses[0].color, kind: "math" },
   { id: 2, course: "马克思主义基本原理", chapter: "导论", type: "简答题", title: "什么是马克思主义？", source: "期末复习提纲 · 第 1 题", reason: "背诵遗漏", status: "需要重背", review: "今天复习", color: "#9a625c", kind: "recitation" },
   { id: 3, course: "机器学习", chapter: "优化方法", type: "计算题", title: "给定损失函数与初始点，完成两轮梯度下降并比较学习率的影响。", source: "实验 4 · 课后题", reason: "使用过提示", status: "未复习", review: "明天复习", color: courses[2].color, kind: "math" },
-  { id: 4, course: "抽象代数", chapter: "商群", type: "证明题", title: "证明正规子群 N 的陪集集合 G/N 在自然运算下构成群。", source: "习题集 4 · 第 6 题", reason: "老师重点", status: "已掌握", review: "7 天后复习", color: courses[1].color, kind: "math" },
-  { id: 5, course: "马克思主义基本原理", chapter: "导论", type: "背诵题", title: "马克思主义由哪些基本组成部分构成？", source: "导论课件 · 第 12 页", reason: "主动收藏", status: "已掌握", review: "5 天后复习", color: "#9a625c", kind: "recitation" },
+  { id: 4, course: "抽象代数", chapter: "商群", type: "证明题", title: "证明正规子群 N 的陪集集合 G/N 在自然运算下构成群。", source: "习题集 4 · 第 6 题", reason: "老师重点", status: "已完成", review: "7 天后复习", color: courses[1].color, kind: "math" },
+  { id: 5, course: "马克思主义基本原理", chapter: "导论", type: "背诵题", title: "马克思主义由哪些基本组成部分构成？", source: "导论课件 · 第 12 页", reason: "主动收藏", status: "已完成", review: "5 天后复习", color: "#9a625c", kind: "recitation" },
 ];
 
 function QuestionBookPage({ initialSelectedId, onRecitation, onAddPlan }: { initialSelectedId: number | null; onRecitation: () => void; onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void }) {
@@ -1126,10 +1109,10 @@ function QuestionBookPage({ initialSelectedId, onRecitation, onAddPlan }: { init
       {selected.kind === "math" ? <>
         <section className="answer-section"><div className="paper-section-title"><span>我的上次答案</span><em>未完成</em></div><p>由条件期望的定义，可以把内层期望直接去掉，所以等式成立。</p><aside>问题记录：只写出了结论，没有说明利用塔式法则或可积性条件。</aside></section>
         <section className="answer-section"><div className="paper-section-title"><span>标准解答</span></div><ol><li>设 X 可积，则 E(X|Y) 存在且可积。</li><li>根据条件期望定义，对 σ(Y) 中的任意事件 A，有 ∫<sub>A</sub>E(X|Y)dP = ∫<sub>A</sub>XdP。</li><li>取 A = Ω，得到 E[E(X|Y)] = E(X)。</li></ol></section>
-        <section className="answer-section ai-organized"><div className="paper-section-title"><span><Sparkles size={12} /> AI 整理</span></div><div className="solution-grid"><div><strong>看到什么</strong><p>外层期望作用在条件期望上。</p></div><div><strong>想到什么</strong><p>塔式法则；取定义中的事件 A = Ω。</p></div><div><strong>易错点</strong><p>不能只说“去掉条件”，需要交代 X 可积和定义依据。</p></div></div></section>
+        <section className="answer-section ai-organized"><div className="paper-section-title"><span><Sparkles size={12} /> 解题整理</span></div><div className="solution-grid"><div><strong>看到什么</strong><p>外层期望作用在条件期望上。</p></div><div><strong>想到什么</strong><p>塔式法则；取定义中的事件 A = Ω。</p></div><div><strong>易错点</strong><p>不能只说“去掉条件”，需要交代 X 可积和定义依据。</p></div></div></section>
       </> : <>
         <section className="answer-section"><div className="paper-section-title"><span>答题骨架</span><em>7 个关键点</em></div><ol><li>马克思、恩格斯创立并由后继者不断发展的科学理论体系。</li><li>关于自然、社会和人类思维发展一般规律的学说。</li><li>关于社会主义代替资本主义、最终实现共产主义的学说。</li><li>三个基本组成部分，以及基本立场、观点和方法的有机统一。</li></ol></section>
-        <section className="answer-section ai-organized"><div className="paper-section-title"><span><Sparkles size={12} /> 上次背诵诊断</span></div><div className="solution-grid"><div><strong>已覆盖</strong><p>创立者、科学理论体系和三个组成部分。</p></div><div><strong>仍需补充</strong><p>社会发展目标、人的全面发展和内在统一。</p></div><div><strong>记忆线索</strong><p>总括四句话 → 三个组成 → 立场观点方法。</p></div></div></section>
+        <section className="answer-section ai-organized"><div className="paper-section-title"><span><Sparkles size={12} /> 上次回答记录</span></div><div className="solution-grid"><div><strong>已覆盖</strong><p>创立者、科学理论体系和三个组成部分。</p></div><div><strong>仍需补充</strong><p>社会发展目标、人的全面发展和内在统一。</p></div><div><strong>记忆线索</strong><p>总括四句话 → 三个组成 → 立场观点方法。</p></div></div></section>
       </>}
       <section className="answer-section personal-note"><div className="paper-section-title"><span>我的笔记</span></div><p>{selected.kind === "math" ? "下次看到“条件期望外面再取期望”，先写塔式法则，再补可积条件。" : "不要只背三个组成部分，定义中的目标和方法统一也是老师反复强调的得分点。"}</p></section>
     </article>
@@ -1138,9 +1121,9 @@ function QuestionBookPage({ initialSelectedId, onRecitation, onAddPlan }: { init
   </div>;
 
   return <div className="question-book-page">
-    <header className="question-book-hero"><div><div className="eyebrow">个人长期题目资产</div><h1>我的题册</h1><p>把做过、错过和需要反复掌握的题，整理成自己的学习资料。</p></div><button className="primary-button" onClick={() => alert("添加题目入口已准备好，可粘贴题目或使用示例截图。") }><Plus size={14} /> 添加题目</button></header>
+    <header className="question-book-hero"><div><div className="eyebrow">个人长期题目资产</div><h1>我的题册</h1><p>把做过、错过和需要反复练习的题，整理成自己的学习资料。</p></div><button className="primary-button" onClick={() => alert("添加题目入口已准备好，可粘贴题目或使用示例截图。") }><Plus size={14} /> 添加题目</button></header>
     <section className="question-book-stats"><div><strong>128</strong><span>共收录</span></div><div><strong>17</strong><span>需要复习</span></div><div><strong>12</strong><span>本周新增</span></div><div><strong>8</strong><span>今天到期</span></div></section>
-    <div className="question-book-toolbar"><div className="question-book-tabs"><button className="active">全部题目</button><button onClick={() => setStatusFilter("模糊")}>需要复习</button><button onClick={() => setCourseFilter("马克思主义基本原理")}>背诵题</button></div><div><select value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option>全部课程</option>{[...new Set(questionBookItems.map((item) => item.course))].map((course) => <option key={course}>{course}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>全部状态</option><option>未复习</option><option>模糊</option><option>需要重背</option><option>已掌握</option></select></div></div>
+    <div className="question-book-toolbar"><div className="question-book-tabs"><button className="active">全部题目</button><button onClick={() => setStatusFilter("模糊")}>需要复习</button><button onClick={() => setCourseFilter("马克思主义基本原理")}>背诵题</button></div><div><select value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option>全部课程</option>{[...new Set(questionBookItems.map((item) => item.course))].map((course) => <option key={course}>{course}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>全部状态</option><option>未复习</option><option>模糊</option><option>需要重背</option><option>已完成</option></select></div></div>
     <div className="question-book-list"><div className="question-book-list-heading"><span>{filtered.length} 道题</span><small>按最近需要复习排序</small></div>{filtered.map((item) => <button key={item.id} onClick={() => openItem(item.id)}><span className="question-course-line" style={{ background: item.color }} /><span className="question-list-main"><small>{item.course} · {item.chapter}</small><strong>{item.title}</strong><em>{item.type} · {item.source}</em></span><span className="question-list-meta"><em>{item.reason}</em><span className={`book-status ${item.status}`}>{item.status}</span><small>{item.review}</small></span><ChevronRight size={15} /></button>)}</div>
   </div>;
 }
@@ -1164,17 +1147,17 @@ function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
     { day: 0, row: 2, span: 1, title: "概率论 · 第 08 讲", time: "10:00–11:30", color: courses[0].color, bg: "#eef0f6", kind: "课程" },
     { day: 0, row: 5, span: 1, title: "宏观经济学阅读", time: "16:00–17:00", color: courses[3].color, bg: "#f7f3e8", kind: "阅读" },
     { day: 1, row: 3, span: 1, title: "复习商群章节", time: "12:30–13:30", color: courses[1].color, bg: "#f7eeea", kind: "自习" },
-    { day: 2, row: 2, span: 1, title: "条件期望复习", time: "10:30–11:10", color: courses[0].color, bg: "#eef0f6", kind: "AI 推荐", recommended: true },
+    { day: 2, row: 2, span: 1, title: "条件期望复习", time: "10:30–11:10", color: courses[0].color, bg: "#eef0f6", kind: "每日计划" },
     { day: 2, row: 5, span: 1, title: "作业 8 截止", time: "17:00", color: courses[0].color, bg: "#e8ebf3", kind: "截止", deadline: true },
     { day: 3, row: 4, span: 2, title: "机器学习实验 5", time: "14:00–17:30", color: courses[2].color, bg: "#edf3f0", kind: "实验" },
     { day: 3, row: 8, span: 1, title: "实验报告截止", time: "23:59", color: courses[2].color, bg: "#e7f0eb", kind: "截止", deadline: true },
     { day: 4, row: 4, span: 1, title: "抽象代数习题集", time: "15:00 截止", color: courses[1].color, bg: "#f4e9e5", kind: "截止", deadline: true },
-    { day: 5, row: 3, span: 2, title: "本周错题回顾", time: "12:00–14:00", color: courses[0].color, bg: "#f2f3f7", kind: "复习", recommended: true },
+    { day: 5, row: 3, span: 2, title: "本周错题回顾", time: "12:00–14:00", color: courses[0].color, bg: "#f2f3f7", kind: "复习" },
     { day: 6, row: 6, span: 1, title: "下周计划整理", time: "18:30–19:00", color: "#777771", bg: "#f1f1ee", kind: "计划" },
   ];
   const todayTasks = [
     { title: "完成概率论作业 8", meta: "今天 17:00 截止", color: courses[0].color, done: false },
-    { title: "复习条件期望", meta: "10 分钟 · AI 推荐", color: courses[0].color, done: true },
+    { title: "复习条件期望", meta: "10 分钟 · 每日计划", color: courses[0].color, done: true },
     { title: "准备机器学习实验", meta: "20 分钟 · 为明天准备", color: courses[2].color, done: false },
   ];
   const milestones = [
@@ -1212,7 +1195,7 @@ function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
         <section className="week-board">
           <div className="week-board-heading">
             <div><div className="eyebrow">本周安排</div><h2>8月10日—16日</h2></div>
-            <div className="calendar-legend"><span><i className="legend-course" />课程与任务</span><span><i className="legend-ai" />AI 推荐</span><span><i className="legend-deadline" />截止事项</span></div>
+            <div className="calendar-legend"><span><i className="legend-course" />课程与任务</span><span><i className="legend-plan" />每日计划</span><span><i className="legend-deadline" />截止事项</span></div>
           </div>
           <div className="week-grid">
             <div className="week-corner">GMT+8</div>
@@ -1225,7 +1208,7 @@ function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
             {events.map((event) => (
               <button
                 key={`${event.day}-${event.title}`}
-                className={`calendar-event ${event.recommended ? "recommended" : ""} ${event.deadline ? "deadline" : ""}`}
+                className={`calendar-event ${event.deadline ? "deadline" : ""}`}
                 style={{ gridColumn: event.day + 2, gridRow: `${event.row + 1} / span ${event.span}`, "--event-color": event.color, "--event-bg": event.bg } as CSSProperties}
                 onClick={event.day === 2 ? () => onCourse(event.deadline ? "Overview" : "Notes") : undefined}
               >
@@ -1242,7 +1225,7 @@ function CalendarPage({ onCourse }: { onCourse: (tab?: Tab) => void }) {
             {todayTasks.map((task) => <button key={task.title} className={task.done ? "done" : ""}><span className="today-check" style={{ borderColor: task.color, background: task.done ? task.color : "transparent" }}>{task.done && <Check size={11} />}</span><span><strong>{task.title}</strong><small>{task.meta}</small></span><ChevronRight size={13} /></button>)}
           </div>
           <div className="today-progress"><div><span>今日学习进度</span><strong>1 / 3</strong></div><span><i /></span></div>
-          <div className="calendar-ai-note"><div><Sparkles size={14} /><span>AI 排期建议</span></div><p>下午 5 点前优先完成概率论作业。条件期望复习已放在上午，避免与实验准备冲突。</p><button onClick={() => onCourse("Overview")}>查看调整后的计划 <ArrowRight size={13} /></button></div>
+          <div className="calendar-ai-note"><div><ListChecks size={14} /><span>今日安排说明</span></div><p>条件期望复习来自每日计划；下午 5 点前还有概率论作业截止事项。</p><button onClick={() => onCourse("Overview")}>查看课程待办 <ArrowRight size={13} /></button></div>
           <div className="calendar-conflict"><Clock3 size={14} /><div><strong>发现 1 处时间重叠</strong><small>周四实验与报告整理时间较紧</small></div></div>
         </aside>
       </div>
