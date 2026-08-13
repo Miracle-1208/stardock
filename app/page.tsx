@@ -16,6 +16,7 @@ import {
   FolderOpen,
   GraduationCap,
   Home,
+  Library,
   Link2,
   ListChecks,
   Menu,
@@ -38,8 +39,9 @@ import {
 } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Page = "home" | "course" | "all-resources" | "calendar" | "recitation";
+type Page = "home" | "course" | "all-resources" | "calendar" | "daily-plan" | "recitation" | "question-book";
 type Tab = "Overview" | "Resources" | "Notes" | "Practice" | "Exam";
+type PlanItem = { id: number; title: string; course: string; minutes: number; color: string; short: string; done: boolean };
 type Resource = {
   id: number;
   type: string;
@@ -54,6 +56,12 @@ const courses = [
   { name: "抽象代数", color: "#a76f5b", progress: 54, next: "复习商群", exam: "9月12日" },
   { name: "机器学习", color: "#638374", progress: 72, next: "实验 5 · 明天", exam: "9月18日" },
   { name: "宏观经济学", color: "#aa8a4f", progress: 61, next: "阅读第 9 章", exam: "9月21日" },
+];
+
+const initialPlanItems: PlanItem[] = [
+  { id: 1, title: "完成作业 8", course: "概率论", minutes: 25, color: courses[0].color, short: "概", done: false },
+  { id: 2, title: "复习梯度下降笔记", course: "机器学习", minutes: 20, color: courses[2].color, short: "机", done: false },
+  { id: 3, title: "阅读商群章节", course: "抽象代数", minutes: 12, color: courses[1].color, short: "代", done: false },
 ];
 
 const initialResources: Resource[] = [
@@ -114,6 +122,7 @@ export default function StarDock() {
   const [completedTasks, setCompletedTasks] = useState<number[]>([]);
   const [targetedReview, setTargetedReview] = useState(false);
   const [taskPulse, setTaskPulse] = useState<number | null>(null);
+  const [planItems, setPlanItems] = useState<PlanItem[]>(initialPlanItems);
 
   const openCourse = useCallback((tab: Tab = "Overview") => {
     setPage("course");
@@ -187,15 +196,19 @@ export default function StarDock() {
         onSearch={() => setSearchOpen(true)}
         onResources={() => setPage("all-resources")}
         onCalendar={() => setPage("calendar")}
+        onDailyPlan={() => setPage("daily-plan")}
         onRecitation={() => setPage("recitation")}
+        onQuestionBook={() => setPage("question-book")}
       />
 
       <main className={`main-shell ${page === "course" && aiOpen ? "with-ai" : ""}`}>
         <WorkspaceSearchBar onSearch={() => setSearchOpen(true)} />
-        {page === "home" && <HomePage onOpenCourse={openCourse} />}
+        {page === "home" && <HomePage onOpenCourse={openCourse} planItems={planItems} onOpenPlan={() => setPage("daily-plan")} />}
         {page === "all-resources" && <AllResourcesPage resources={resources} onCourse={openCourse} onAdd={() => setResourceModal(true)} />}
         {page === "calendar" && <CalendarPage onCourse={openCourse} />}
+        {page === "daily-plan" && <DailyPlanPage items={planItems} setItems={setPlanItems} />}
         {page === "recitation" && <RecitationAssistant />}
+        {page === "question-book" && <QuestionBookPage onRecitation={() => setPage("recitation")} onAddPlan={(item) => setPlanItems((items) => [...items, { ...item, id: Math.max(0, ...items.map((current) => current.id)) + 1, done: false }])} />}
         {page === "course" && (
           <CourseWorkspace
             activeTab={activeTab}
@@ -263,7 +276,9 @@ function Sidebar({
   onSearch,
   onResources,
   onCalendar,
+  onDailyPlan,
   onRecitation,
+  onQuestionBook,
 }: {
   page: Page;
   activeTab: Tab;
@@ -272,7 +287,9 @@ function Sidebar({
   onSearch: () => void;
   onResources: () => void;
   onCalendar: () => void;
+  onDailyPlan: () => void;
   onRecitation: () => void;
+  onQuestionBook: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -288,8 +305,10 @@ function Sidebar({
       </button>
       <nav className="primary-nav" aria-label="主导航">
         <NavItem active={page === "home"} icon={<Home />} label="首页" onClick={onHome} />
+        <NavItem active={page === "daily-plan"} icon={<Clock3 />} label="每日计划" onClick={onDailyPlan} />
         <NavItem active={page === "all-resources"} icon={<FolderOpen />} label="全部资料" onClick={onResources} />
         <NavItem active={page === "calendar"} icon={<CalendarDays />} label="日历" onClick={onCalendar} />
+        <NavItem active={page === "question-book"} icon={<Library />} label="我的题册" onClick={onQuestionBook} />
         <NavItem active={page === "recitation"} icon={<Brain />} label="背诵辅助" onClick={onRecitation} />
       </nav>
       <div className="semester-section">
@@ -805,39 +824,9 @@ function SearchPalette({ query, setQuery, onClose, onSelect }: { query: string; 
   );
 }
 
-function HomePage({ onOpenCourse }: { onOpenCourse: (tab?: Tab) => void }) {
-  const [planItems, setPlanItems] = useState([
-    { id: 1, title: "完成作业 8", course: "概率论", minutes: 25, color: courses[0].color, short: "概", done: false },
-    { id: 2, title: "复习梯度下降笔记", course: "机器学习", minutes: 20, color: courses[2].color, short: "机", done: false },
-    { id: 3, title: "阅读商群章节", course: "抽象代数", minutes: 12, color: courses[1].color, short: "代", done: false },
-  ]);
-  const [planComposerOpen, setPlanComposerOpen] = useState(false);
-  const [planDraft, setPlanDraft] = useState("");
-  const [planCourse, setPlanCourse] = useState(courses[0].name);
-  const [planMinutes, setPlanMinutes] = useState(25);
+function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?: Tab) => void; planItems: PlanItem[]; onOpenPlan: () => void }) {
   const completedPlans = planItems.filter((item) => item.done).length;
   const totalMinutes = planItems.reduce((total, item) => total + item.minutes, 0);
-  const selectedCourse = courses.find((course) => course.name === planCourse) ?? courses[0];
-
-  const addPlanItem = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const title = planDraft.trim();
-    if (!title) return;
-    setPlanItems((items) => [
-      ...items,
-      {
-        id: Math.max(0, ...items.map((item) => item.id)) + 1,
-        title,
-        course: planCourse,
-        minutes: planMinutes,
-        color: selectedCourse.color,
-        short: planCourse.slice(0, 1),
-        done: false,
-      },
-    ]);
-    setPlanDraft("");
-    setPlanComposerOpen(false);
-  };
 
   return (
     <div className="standalone-page content-width">
@@ -849,34 +838,49 @@ function HomePage({ onOpenCourse }: { onOpenCourse: (tab?: Tab) => void }) {
           <div><div className="eyebrow">今天 · 8月12日</div><h2>每日计划</h2></div>
           <div className="daily-plan-actions">
             <span>{completedPlans}/{planItems.length} 已完成 · {totalMinutes} 分钟</span>
-            <button onClick={() => setPlanComposerOpen((open) => !open)}><Plus size={13} /> 添加任务</button>
+            <button onClick={onOpenPlan}>打开每日计划 <ArrowRight size={13} /></button>
           </div>
         </div>
-        {planComposerOpen && (
-          <form className="daily-plan-composer" onSubmit={addPlanItem}>
-            <input autoFocus value={planDraft} onChange={(event) => setPlanDraft(event.target.value)} placeholder="准备完成什么？" aria-label="任务名称" />
-            <select value={planCourse} onChange={(event) => setPlanCourse(event.target.value)} aria-label="所属课程">
-              {courses.map((course) => <option key={course.name}>{course.name}</option>)}
-            </select>
-            <select value={planMinutes} onChange={(event) => setPlanMinutes(Number(event.target.value))} aria-label="预计用时">
-              {[15, 25, 40, 60].map((minutes) => <option key={minutes} value={minutes}>{minutes} 分钟</option>)}
-            </select>
-            <button className="primary-button" type="submit">加入今天</button>
-          </form>
-        )}
         <div className="daily-plan-progress" aria-label={`今日计划已完成 ${completedPlans} 项，共 ${planItems.length} 项`}><span style={{ width: `${planItems.length ? (completedPlans / planItems.length) * 100 : 0}%` }} /></div>
         <div className="mixed-tasks">
-          {planItems.map((item) => (
-            <button key={item.id} className={item.done ? "complete" : ""} onClick={() => setPlanItems((items) => items.map((current) => current.id === item.id ? { ...current, done: !current.done } : current))}>
+          {planItems.slice(0, 3).map((item) => (
+            <button key={item.id} className={item.done ? "complete" : ""} onClick={onOpenPlan}>
               <span className="course-mini" style={{ background: item.color }}>{item.short}</span>
               <span><strong>{item.title}</strong><small>{item.course} · {item.minutes} 分钟</small></span>
-              {item.done ? <Check size={15} /> : <Circle size={15} />}
+              <ChevronRight size={15} />
             </button>
           ))}
         </div>
       </section>
     </div>
   );
+}
+
+function DailyPlanPage({ items, setItems }: { items: PlanItem[]; setItems: React.Dispatch<React.SetStateAction<PlanItem[]>> }) {
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [courseName, setCourseName] = useState(courses[0].name);
+  const [minutes, setMinutes] = useState(25);
+  const completed = items.filter((item) => item.done).length;
+  const totalMinutes = items.reduce((total, item) => total + item.minutes, 0);
+
+  const addItem = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = draft.trim();
+    if (!title) return;
+    const selectedCourse = courses.find((course) => course.name === courseName) ?? courses[0];
+    setItems((current) => [...current, { id: Math.max(0, ...current.map((item) => item.id)) + 1, title, course: courseName, minutes, color: selectedCourse.color, short: courseName.slice(0, 1), done: false }]);
+    setDraft("");
+    setComposerOpen(false);
+  };
+
+  return <div className="standalone-page content-width daily-plan-page">
+    <div className="page-intro row-intro"><div><div className="eyebrow">今天 · 8月12日</div><h1>每日计划</h1><p>把跨课程任务收在一天里，按预计用时推进学习节奏。</p></div><button className="primary-button" onClick={() => setComposerOpen((open) => !open)}><Plus size={14} /> 添加任务</button></div>
+    <section className="daily-plan-overview"><div><span>完成进度</span><strong>{completed}/{items.length}</strong><small>项任务</small></div><div><span>计划用时</span><strong>{totalMinutes}</strong><small>分钟</small></div><div><span>剩余时间</span><strong>{items.filter((item) => !item.done).reduce((total, item) => total + item.minutes, 0)}</strong><small>分钟</small></div><div><span>当前节奏</span><strong>{completed ? "进行中" : "待开始"}</strong><small>今天</small></div></section>
+    {composerOpen && <form className="daily-plan-composer daily-plan-page-composer" onSubmit={addItem}><input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="准备完成什么？" aria-label="任务名称" /><select value={courseName} onChange={(event) => setCourseName(event.target.value)} aria-label="所属课程">{courses.map((course) => <option key={course.name}>{course.name}</option>)}</select><select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} aria-label="预计用时">{[15, 25, 40, 60].map((value) => <option key={value} value={value}>{value} 分钟</option>)}</select><button className="primary-button" type="submit">加入今天</button></form>}
+    <div className="daily-plan-progress large"><span style={{ width: `${items.length ? (completed / items.length) * 100 : 0}%` }} /></div>
+    <section className="daily-plan-list"><div className="daily-plan-list-heading"><div><div className="eyebrow">今日安排</div><h2>按优先顺序完成</h2></div><span>{items.length - completed} 项待完成</span></div>{items.map((item, index) => <button key={item.id} className={item.done ? "complete" : ""} onClick={() => setItems((current) => current.map((plan) => plan.id === item.id ? { ...plan, done: !plan.done } : plan))}><span className="daily-plan-index">{String(index + 1).padStart(2, "0")}</span><span className="course-mini" style={{ background: item.color }}>{item.short}</span><span><strong>{item.title}</strong><small>{item.course} · 预计 {item.minutes} 分钟</small></span><span className="daily-plan-state">{item.done ? <><Check size={13} /> 已完成</> : <><Circle size={13} /> 标记完成</>}</span></button>)}</section>
+  </div>;
 }
 
 type RecitationStage = "source" | "generating" | "questions" | "settings" | "session" | "feedback" | "summary";
@@ -1057,6 +1061,58 @@ function RecitationAssistant() {
 
 function SettingChoice({ icon, title, description, options, value, onChange }: { icon: React.ReactNode; title: string; description: string; options: string[]; value: string; onChange: (value: string) => void }) {
   return <section className="recitation-setting"><div className="setting-intro"><span>{icon}</span><div><h3>{title}</h3><p>{description}</p></div></div><div className="setting-options">{options.map((option) => <button key={option} className={value === option ? "selected" : ""} onClick={() => onChange(option)}>{value === option && <Check size={12} />}{option}</button>)}</div></section>;
+}
+
+const questionBookItems = [
+  { id: 1, course: "概率论", chapter: "条件期望", type: "证明题", title: "设 X、Y 为随机变量，证明 E[E(X|Y)] = E(X)。", source: "作业 6 · 第 3 题", reason: "做错 2 次", status: "模糊", review: "今天复习", color: courses[0].color, kind: "math" },
+  { id: 2, course: "马克思主义基本原理", chapter: "导论", type: "简答题", title: "什么是马克思主义？", source: "期末复习提纲 · 第 1 题", reason: "背诵遗漏", status: "需要重背", review: "今天复习", color: "#9a625c", kind: "recitation" },
+  { id: 3, course: "机器学习", chapter: "优化方法", type: "计算题", title: "给定损失函数与初始点，完成两轮梯度下降并比较学习率的影响。", source: "实验 4 · 课后题", reason: "使用过提示", status: "未复习", review: "明天复习", color: courses[2].color, kind: "math" },
+  { id: 4, course: "抽象代数", chapter: "商群", type: "证明题", title: "证明正规子群 N 的陪集集合 G/N 在自然运算下构成群。", source: "习题集 4 · 第 6 题", reason: "老师重点", status: "已掌握", review: "7 天后复习", color: courses[1].color, kind: "math" },
+  { id: 5, course: "马克思主义基本原理", chapter: "导论", type: "背诵题", title: "马克思主义由哪些基本组成部分构成？", source: "导论课件 · 第 12 页", reason: "主动收藏", status: "已掌握", review: "5 天后复习", color: "#9a625c", kind: "recitation" },
+];
+
+function QuestionBookPage({ onRecitation, onAddPlan }: { onRecitation: () => void; onAddPlan: (item: Omit<PlanItem, "id" | "done">) => void }) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [courseFilter, setCourseFilter] = useState("全部课程");
+  const [statusFilter, setStatusFilter] = useState("全部状态");
+  const [practiceOpen, setPracticeOpen] = useState(false);
+  const [practiceAnswer, setPracticeAnswer] = useState("");
+  const [answerRevealed, setAnswerRevealed] = useState(false);
+  const [plannedId, setPlannedId] = useState<number | null>(null);
+  const selected = questionBookItems.find((item) => item.id === selectedId) ?? null;
+  const filtered = questionBookItems.filter((item) => (courseFilter === "全部课程" || item.course === courseFilter) && (statusFilter === "全部状态" || item.status === statusFilter));
+
+  const openItem = (id: number) => { setSelectedId(id); setPracticeOpen(false); setPracticeAnswer(""); setAnswerRevealed(false); };
+  const addToPlan = (item: typeof questionBookItems[number]) => {
+    onAddPlan({ title: item.kind === "recitation" ? `重背：${item.title}` : `复习：${item.title}`, course: item.course, minutes: item.kind === "recitation" ? 15 : 25, color: item.color, short: item.course.slice(0, 1) });
+    setPlannedId(item.id);
+  };
+
+  if (selected) return <div className="question-book-page question-detail-page">
+    <button className="question-detail-back" onClick={() => setSelectedId(null)}><ChevronRight size={13} /> 返回我的题册</button>
+    <header className="question-detail-header"><div><div className="eyebrow">{selected.course} · {selected.chapter}</div><h1>{selected.type}</h1><p>{selected.source} · 因“{selected.reason}”收录</p></div><div><span className={`book-status ${selected.status}`}>{selected.status}</span><small>{selected.review}</small></div></header>
+    <article className="question-paper">
+      <section className="question-stem"><span>题目</span><h2>{selected.title}</h2>{selected.kind === "math" && <p>请给出完整推导，并说明等式成立所使用的条件。</p>}</section>
+      {selected.kind === "math" ? <>
+        <section className="answer-section"><div className="paper-section-title"><span>我的上次答案</span><em>未完成</em></div><p>由条件期望的定义，可以把内层期望直接去掉，所以等式成立。</p><aside>问题记录：只写出了结论，没有说明利用塔式法则或可积性条件。</aside></section>
+        <section className="answer-section"><div className="paper-section-title"><span>标准解答</span></div><ol><li>设 X 可积，则 E(X|Y) 存在且可积。</li><li>根据条件期望定义，对 σ(Y) 中的任意事件 A，有 ∫<sub>A</sub>E(X|Y)dP = ∫<sub>A</sub>XdP。</li><li>取 A = Ω，得到 E[E(X|Y)] = E(X)。</li></ol></section>
+        <section className="answer-section ai-organized"><div className="paper-section-title"><span><Sparkles size={12} /> AI 整理</span></div><div className="solution-grid"><div><strong>看到什么</strong><p>外层期望作用在条件期望上。</p></div><div><strong>想到什么</strong><p>塔式法则；取定义中的事件 A = Ω。</p></div><div><strong>易错点</strong><p>不能只说“去掉条件”，需要交代 X 可积和定义依据。</p></div></div></section>
+      </> : <>
+        <section className="answer-section"><div className="paper-section-title"><span>答题骨架</span><em>7 个关键点</em></div><ol><li>马克思、恩格斯创立并由后继者不断发展的科学理论体系。</li><li>关于自然、社会和人类思维发展一般规律的学说。</li><li>关于社会主义代替资本主义、最终实现共产主义的学说。</li><li>三个基本组成部分，以及基本立场、观点和方法的有机统一。</li></ol></section>
+        <section className="answer-section ai-organized"><div className="paper-section-title"><span><Sparkles size={12} /> 上次背诵诊断</span></div><div className="solution-grid"><div><strong>已覆盖</strong><p>创立者、科学理论体系和三个组成部分。</p></div><div><strong>仍需补充</strong><p>社会发展目标、人的全面发展和内在统一。</p></div><div><strong>记忆线索</strong><p>总括四句话 → 三个组成 → 立场观点方法。</p></div></div></section>
+      </>}
+      <section className="answer-section personal-note"><div className="paper-section-title"><span>我的笔记</span></div><p>{selected.kind === "math" ? "下次看到“条件期望外面再取期望”，先写塔式法则，再补可积条件。" : "不要只背三个组成部分，定义中的目标和方法统一也是老师反复强调的得分点。"}</p></section>
+    </article>
+    {practiceOpen && selected.kind === "math" && <section className="question-practice-panel"><div><div className="eyebrow">再做一次</div><h3>先独立完成，再对照整理后的解答。</h3></div><textarea value={practiceAnswer} onChange={(event) => setPracticeAnswer(event.target.value)} placeholder="写下你的证明过程……" />{answerRevealed && <p><CheckCircle2 size={14} /> 已显示上方标准解答。重点检查是否写出 X 可积、条件期望定义和 A = Ω。</p>}<button className="primary-button" disabled={!practiceAnswer.trim()} onClick={() => setAnswerRevealed(true)}>完成并对照答案</button></section>}
+    <div className="question-detail-actions"><button onClick={() => addToPlan(selected)}>{plannedId === selected.id ? <Check size={13} /> : <Plus size={13} />}{plannedId === selected.id ? "已加入每日计划" : "加入每日计划"}</button>{selected.kind === "recitation" ? <button className="primary-button" onClick={onRecitation}><Brain size={14} /> 开始背诵</button> : <button className="primary-button" onClick={() => setPracticeOpen(true)}><RotateCcw size={14} /> 再做一次</button>}</div>
+  </div>;
+
+  return <div className="question-book-page">
+    <header className="question-book-hero"><div><div className="eyebrow">个人长期题目资产</div><h1>我的题册</h1><p>把做过、错过和需要反复掌握的题，整理成自己的学习资料。</p></div><button className="primary-button" onClick={() => alert("添加题目入口已准备好，可粘贴题目或使用示例截图。") }><Plus size={14} /> 添加题目</button></header>
+    <section className="question-book-stats"><div><strong>128</strong><span>共收录</span></div><div><strong>17</strong><span>需要复习</span></div><div><strong>12</strong><span>本周新增</span></div><div><strong>8</strong><span>今天到期</span></div></section>
+    <div className="question-book-toolbar"><div className="question-book-tabs"><button className="active">全部题目</button><button onClick={() => setStatusFilter("模糊")}>需要复习</button><button onClick={() => setCourseFilter("马克思主义基本原理")}>背诵题</button></div><div><select value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option>全部课程</option>{[...new Set(questionBookItems.map((item) => item.course))].map((course) => <option key={course}>{course}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>全部状态</option><option>未复习</option><option>模糊</option><option>需要重背</option><option>已掌握</option></select></div></div>
+    <div className="question-book-list"><div className="question-book-list-heading"><span>{filtered.length} 道题</span><small>按最近需要复习排序</small></div>{filtered.map((item) => <button key={item.id} onClick={() => openItem(item.id)}><span className="question-course-line" style={{ background: item.color }} /><span className="question-list-main"><small>{item.course} · {item.chapter}</small><strong>{item.title}</strong><em>{item.type} · {item.source}</em></span><span className="question-list-meta"><em>{item.reason}</em><span className={`book-status ${item.status}`}>{item.status}</span><small>{item.review}</small></span><ChevronRight size={15} /></button>)}</div>
+  </div>;
 }
 
 function AllResourcesPage({ resources, onCourse, onAdd }: { resources: Resource[]; onCourse: (tab?: Tab) => void; onAdd: () => void }) {
