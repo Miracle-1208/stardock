@@ -4,7 +4,7 @@
 
 > 一门课，一个长期存在的 AI 工作区。
 
-[在线体验](https://courseos-ai-course.fizzy-rook-3938.chatgpt.site)
+[在线体验](https://stardock-learning-space.bdxtvbhvgy.chatgpt.site)
 
 ## 产品概念
 

@@ -165,10 +165,16 @@ npm test
 
 任何代码、样式、配置、文档或资源更改，在完成与风险匹配的验证后，都必须继续完成以下交付动作。只完成本地修改、只构建成功或只给出预览不算任务完成。
 
+本项目在当前账户下的固定生产站点是：
+
+> https://stardock-learning-space.bdxtvbhvgy.chatgpt.site
+
+该链接是后续所有部署的唯一目标。对应 Sites 项目以 `.openai/hosting.json` 中的 `project_id` 为准。
+
 1. 将本次确认完成的更改提交到当前 Git 分支，提交内容必须与已经验证的源码一致。
 2. 将提交推送到仓库现有远端；除非任务明确要求，不新建远端、替换仓库或改写分支历史。
 3. 使用 `.openai/hosting.json` 中现有的 `project_id` 重新部署到 ChatGPT Sites。
-4. 必须更新现有站点版本并保持原有 `chatgpt.site` 链接，不得为同一项目另建站点、生成替代链接或只发布临时预览。
+4. 必须更新现有站点版本并保持 `https://stardock-learning-space.bdxtvbhvgy.chatgpt.site` 不变，不得为同一项目另建站点、生成替代链接或只发布临时预览。
 5. 部署成功后确认该同一链接已经指向本次提交对应的版本，并在最终回复中报告提交、推送和部署结果。
 
 执行这套交付动作时还必须遵守：
