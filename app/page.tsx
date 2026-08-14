@@ -4,17 +4,18 @@ import {
   ArrowRight,
   BookOpen,
   Brain,
-  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
   Clock3,
+  Compass,
   File,
   FileText,
   FolderOpen,
   GraduationCap,
+  GitFork,
   Home,
   Library,
   Link2,
@@ -34,12 +35,27 @@ import {
   Sparkles,
   SlidersHorizontal,
   Upload,
+  UserRound,
   Video,
   X,
 } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ContributionsPage,
+  type CourseDock,
+  DockListRow,
+  ExploreDocksPage,
+  ForkDockModal,
+  MyDocksPage,
+  ProfilePage,
+  PublicDockDetailPage,
+  PublishDockModal,
+  type UserDock,
+  UpstreamUpdateModal,
+  dockCatalog,
+} from "./dock-community";
 
-type Page = "home" | "course" | "all-resources" | "calendar" | "daily-plan" | "recitation" | "question-book";
+type Page = "home" | "explore" | "dock-detail" | "my-docks" | "course" | "all-resources" | "calendar" | "daily-plan" | "recitation" | "question-book" | "contributions" | "profile";
 type Tab = "Overview" | "Resources" | "Notes" | "Practice" | "Exam";
 type PlanStatus = "未开始" | "专注中" | "已暂停" | "已完成" | "已跳过";
 type PlanMode = "focus" | "practice" | "recitation";
@@ -53,6 +69,7 @@ type Resource = {
   detail: string;
   date: string;
   status: ResourceStatus;
+  layer: "shared" | "personal";
 };
 type NoteStage = "library" | "brief" | "searching" | "sources" | "generating" | "draft";
 type NoteWorkflow = { stage: NoteStage; topic: string; resourceIds: number[]; publishedUpdate: boolean };
@@ -72,14 +89,14 @@ const initialPlanItems: PlanItem[] = [
 ];
 
 const initialResources: Resource[] = [
-  { id: 1, type: "课件", title: "第 01 讲 — 概率空间", detail: "42 页 · 张教授", date: "8月3日", status: "已整理" },
-  { id: 2, type: "课件", title: "第 02 讲 — 条件概率", detail: "38 页 · 张教授", date: "8月5日", status: "已整理" },
-  { id: 3, type: "课件", title: "第 03 讲 — 随机变量", detail: "51 页 · 张教授", date: "8月8日", status: "已整理" },
-  { id: 4, type: "教材", title: "概率论导论 — 第 4 章", detail: "121–164 页 · 概率分布", date: "8月8日", status: "已索引" },
-  { id: 5, type: "作业", title: "作业 07", detail: "8 道题 · 8月14日截止", date: "8月10日", status: "已索引" },
-  { id: 6, type: "往年试卷", title: "2025 年期末试卷", detail: "90 分钟 · 含解析", date: "8月10日", status: "已索引" },
-  { id: 7, type: "笔记", title: "我的笔记 — 条件期望", detail: "第 07 讲后更新", date: "8月11日", status: "已整理" },
-  { id: 8, type: "视频", title: "第 07 讲课堂录屏", detail: "1小时18分 · 原始视频", date: "8月11日", status: "已入库" },
+  { id: 1, type: "课件", title: "第 01 讲 — 概率空间", detail: "42 页 · 张教授", date: "8月3日", status: "已整理", layer: "shared" },
+  { id: 2, type: "课件", title: "第 02 讲 — 条件概率", detail: "38 页 · 张教授", date: "8月5日", status: "已整理", layer: "shared" },
+  { id: 3, type: "课件", title: "第 03 讲 — 随机变量", detail: "51 页 · 张教授", date: "8月8日", status: "已整理", layer: "shared" },
+  { id: 4, type: "教材", title: "概率论导论 — 第 4 章", detail: "121–164 页 · 概率分布", date: "8月8日", status: "已索引", layer: "shared" },
+  { id: 5, type: "作业", title: "作业 07", detail: "8 道题 · 8月14日截止", date: "8月10日", status: "已索引", layer: "shared" },
+  { id: 6, type: "往年试卷", title: "2025 年期末试卷", detail: "90 分钟 · 含解析", date: "8月10日", status: "已索引", layer: "shared" },
+  { id: 7, type: "笔记", title: "我的笔记 — 条件期望", detail: "第 07 讲后更新", date: "8月11日", status: "已整理", layer: "personal" },
+  { id: 8, type: "视频", title: "第 07 讲课堂录屏", detail: "1小时18分 · 原始视频", date: "8月11日", status: "已入库", layer: "shared" },
 ];
 
 const searchItems = [
@@ -106,7 +123,7 @@ const defaultAgent = {
 };
 
 export default function StarDock() {
-  const [page, setPage] = useState<Page>("course");
+  const [page, setPage] = useState<Page>("home");
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [aiOpen, setAiOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -120,6 +137,15 @@ export default function StarDock() {
     { id: 1, taskId: 8, course: "概率论", title: "整理第 07 讲课堂笔记", minutes: 25, result: "已完成", time: "09:35–10:00" },
   ]);
   const [questionBookTarget, setQuestionBookTarget] = useState<number | null>(null);
+  const [selectedDock, setSelectedDock] = useState<CourseDock>(dockCatalog[0]);
+  const [forkModalDock, setForkModalDock] = useState<CourseDock | null>(null);
+  const [userDock, setUserDock] = useState<UserDock | null>(null);
+  const [savedDockIds, setSavedDockIds] = useState<string[]>([]);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [published, setPublished] = useState(false);
+  const [upstreamOpen, setUpstreamOpen] = useState(false);
+  const [sharedVersion, setSharedVersion] = useState("v1.8");
+  const [practiceEvidence, setPracticeEvidence] = useState<{ incorrect: boolean; hintUsed: boolean } | null>(null);
 
   const addPlanItem = useCallback((item: Omit<PlanItem, "id" | "status">) => {
     setPlanItems((current) => current.some((plan) => plan.title === item.title && plan.status !== "已完成") ? current : [...current, { ...item, id: Math.max(0, ...current.map((plan) => plan.id)) + 1, status: "未开始" }]);
@@ -128,6 +154,11 @@ export default function StarDock() {
   const openCourse = useCallback((tab: Tab = "Overview") => {
     setPage("course");
     setActiveTab(tab);
+  }, []);
+
+  const viewDock = useCallback((dock: CourseDock) => {
+    setSelectedDock(dock);
+    setPage("dock-detail");
   }, []);
 
   useEffect(() => {
@@ -153,21 +184,28 @@ export default function StarDock() {
         onHome={() => setPage("home")}
         onCourse={openCourse}
         onSearch={() => setSearchOpen(true)}
-        onResources={() => setPage("all-resources")}
-        onCalendar={() => setPage("calendar")}
         onDailyPlan={() => setPage("daily-plan")}
         onRecitation={() => setPage("recitation")}
         onQuestionBook={() => { setQuestionBookTarget(null); setPage("question-book"); }}
+        onExplore={() => setPage("explore")}
+        onMyDocks={() => setPage("my-docks")}
+        onContributions={() => setPage("contributions")}
+        onProfile={() => setPage("profile")}
       />
 
       <main className={`main-shell ${page === "course" && aiOpen ? "with-ai" : ""}`}>
-        <WorkspaceSearchBar onSearch={() => setSearchOpen(true)} />
-        {page === "home" && <HomePage onOpenCourse={openCourse} planItems={planItems} onOpenPlan={() => setPage("daily-plan")} />}
+        {page !== "explore" && page !== "dock-detail" && <WorkspaceSearchBar onSearch={() => setSearchOpen(true)} />}
+        {page === "home" && <HomePage onOpenCourse={openCourse} planItems={planItems} onOpenPlan={() => setPage("daily-plan")} onExplore={() => setPage("explore")} onViewDock={viewDock} onForkDock={setForkModalDock} userDock={userDock} />}
+        {page === "explore" && <ExploreDocksPage onViewDock={viewDock} onForkDock={setForkModalDock} />}
+        {page === "dock-detail" && <PublicDockDetailPage dock={selectedDock} saved={savedDockIds.includes(selectedDock.id)} onBack={() => setPage("explore")} onFork={() => setForkModalDock(selectedDock)} onToggleSave={() => setSavedDockIds((ids) => ids.includes(selectedDock.id) ? ids.filter((id) => id !== selectedDock.id) : [...ids, selectedDock.id])} />}
+        {page === "my-docks" && <MyDocksPage userDock={userDock} onOpenCourse={() => openCourse("Overview")} onExplore={() => setPage("explore")} />}
         {page === "all-resources" && <AllResourcesPage resources={resources} onCourse={openCourse} onAdd={() => setResourceModal(true)} />}
         {page === "calendar" && <CalendarPage onCourse={openCourse} />}
         {page === "daily-plan" && <DailyPlanPage items={planItems} setItems={setPlanItems} logs={focusLogs} setLogs={setFocusLogs} onOpenQuestionBook={(id) => { setQuestionBookTarget(id); setPage("question-book"); }} onOpenRecitation={() => setPage("recitation")} />}
         {page === "recitation" && <RecitationAssistant />}
         {page === "question-book" && <QuestionBookPage initialSelectedId={questionBookTarget} onRecitation={() => setPage("recitation")} onAddPlan={addPlanItem} />}
+        {page === "contributions" && <ContributionsPage published={published} onPublish={() => setPublishOpen(true)} />}
+        {page === "profile" && <ProfilePage />}
         {page === "course" && (
           <CourseWorkspace
             activeTab={activeTab}
@@ -186,6 +224,16 @@ export default function StarDock() {
             plannedTitles={planItems.filter((item) => item.status !== "已完成").map((item) => item.title)}
             onOpenRecitation={() => setPage("recitation")}
             onOpenQuestionBook={(id) => { setQuestionBookTarget(id ?? null); setPage("question-book"); }}
+            userDock={userDock}
+            sharedVersion={sharedVersion}
+            updateAvailable={Boolean(userDock) && sharedVersion === "v1.8"}
+            onViewOriginal={() => viewDock(dockCatalog[0])}
+            onReviewUpdate={() => setUpstreamOpen(true)}
+            onPracticeEvidence={(hintUsed) => {
+              setPracticeEvidence({ incorrect: true, hintUsed });
+              setAiOpen(true);
+              setAgentMessage({ label: "私人学习记录已更新", title: "条件期望这道题仍有一个遗漏。", body: `${hintUsed ? "你查看了结构提示，答案仍不完整。" : "本次答案不完整。"}记录来自课程主笔记 4.2、第 07 讲第 24–27 页和作业 6 第 3 题。` });
+            }}
           />
         )}
       </main>
@@ -203,10 +251,18 @@ export default function StarDock() {
             setMessage={setAgentMessage}
             topic="课程笔记 4.2 · 塔式法则"
             resourceCount={resources.length + 10}
+            forked={Boolean(userDock)}
+            practiceEvidence={practiceEvidence}
             onOpenNoteWorkflow={() => {
               setNoteWorkflow((current) => ({ ...current, stage: "brief" }));
               openCourse("Notes");
               setAiOpen(false);
+            }}
+            onReviewNote={() => openCourse("Notes")}
+            onRetryQuestion={() => openCourse("Practice")}
+            onStartReview={() => {
+              addPlanItem({ title: "10 分钟复习：条件期望", course: "概率论", minutes: 10, color: courses[0].color, short: "概", mode: "focus", source: "课程 Agent · 私人学习记录" });
+              setPage("daily-plan");
             }}
           />
         </>
@@ -219,11 +275,14 @@ export default function StarDock() {
         <AddResourceModal
           onClose={() => setResourceModal(false)}
           onAdded={(resource) => {
-            setResources((current) => [resource, ...current]);
+            setResources((current) => [{ ...resource, layer: "personal" }, ...current]);
             setAgentMessage({ label: "资料已入库", title: "原始资料已安全保存。", body: `${resource.title} 尚未解析。发起课程笔记或专题整理时，Agent 会在同一个任务上下文中检索并处理它。` });
           }}
         />
       )}
+      {forkModalDock && <ForkDockModal dock={forkModalDock} onClose={() => setForkModalDock(null)} onForked={(dock) => { setUserDock(dock); setSharedVersion(dock.sharedVersion); }} onOpenDock={() => { setForkModalDock(null); openCourse("Overview"); }} />}
+      {publishOpen && <PublishDockModal onClose={() => setPublishOpen(false)} onPublished={() => setPublished(true)} />}
+      {upstreamOpen && <UpstreamUpdateModal onClose={() => setUpstreamOpen(false)} onApply={() => { setSharedVersion("v1.9"); setUpstreamOpen(false); }} />}
     </div>
   );
 }
@@ -234,22 +293,26 @@ function Sidebar({
   onHome,
   onCourse,
   onSearch,
-  onResources,
-  onCalendar,
   onDailyPlan,
   onRecitation,
   onQuestionBook,
+  onExplore,
+  onMyDocks,
+  onContributions,
+  onProfile,
 }: {
   page: Page;
   activeTab: Tab;
   onHome: () => void;
   onCourse: (tab?: Tab) => void;
   onSearch: () => void;
-  onResources: () => void;
-  onCalendar: () => void;
   onDailyPlan: () => void;
   onRecitation: () => void;
   onQuestionBook: () => void;
+  onExplore: () => void;
+  onMyDocks: () => void;
+  onContributions: () => void;
+  onProfile: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -264,10 +327,13 @@ function Sidebar({
         <ChevronDown size={14} />
       </button>
       <nav className="primary-nav" aria-label="主导航">
+        <span className="nav-group-label">发现</span>
+        <NavItem active={page === "explore" || page === "dock-detail"} icon={<Compass />} label="发现课程舱" onClick={onExplore} />
+        <NavItem active={false} icon={<Search />} label="搜索" onClick={onSearch} />
+        <span className="nav-group-label">我的学习</span>
         <NavItem active={page === "home"} icon={<Home />} label="首页" onClick={onHome} />
+        <NavItem active={page === "my-docks"} icon={<GitFork />} label="我的课程舱" onClick={onMyDocks} />
         <NavItem active={page === "daily-plan"} icon={<Clock3 />} label="每日计划" onClick={onDailyPlan} />
-        <NavItem active={page === "all-resources"} icon={<FolderOpen />} label="全部资料" onClick={onResources} />
-        <NavItem active={page === "calendar"} icon={<CalendarDays />} label="日历" onClick={onCalendar} />
         <NavItem active={page === "question-book"} icon={<Library />} label="我的题册" onClick={onQuestionBook} />
         <NavItem active={page === "recitation"} icon={<Brain />} label="背诵辅助" onClick={onRecitation} />
       </nav>
@@ -281,18 +347,19 @@ function Sidebar({
               {course.name === "概率论" && page === "course" && <span className="active-course-line" />}
             </button>
           ))}
-          <button className="course-item add-course" onClick={() => alert("新课程创建入口已准备好，可进入下一步引导流程。") }><Plus size={14} /><span>新建课程</span></button>
         </div>
       </div>
       <div className="sidebar-bottom">
+        <button className={`nav-item ${page === "contributions" ? "active" : ""}`} onClick={onContributions}><Upload /><span>我的贡献</span></button>
+        <button className={`nav-item ${page === "profile" ? "active" : ""}`} onClick={onProfile}><UserRound /><span>个人资料</span></button>
         <button className="nav-item" onClick={() => alert("星坞设置已打开。") }><Settings /><span>设置</span></button>
       </div>
       <div className="mobile-tabs" aria-label="移动端导航">
         <button className={page === "home" ? "active" : ""} onClick={onHome}><Home /><span>首页</span></button>
-        <button onClick={onSearch}><Search /><span>搜索</span></button>
+        <button className={page === "explore" ? "active" : ""} onClick={onExplore}><Compass /><span>发现</span></button>
         <button className={page === "course" && activeTab === "Overview" ? "active" : ""} onClick={() => onCourse("Overview")}><BookOpen /><span>课程</span></button>
-        <button className={page === "all-resources" ? "active" : ""} onClick={onResources}><FolderOpen /><span>资料</span></button>
-        <button className={page === "calendar" ? "active" : ""} onClick={onCalendar}><CalendarDays /><span>日历</span></button>
+        <button className={page === "daily-plan" ? "active" : ""} onClick={onDailyPlan}><Clock3 /><span>计划</span></button>
+        <button className={page === "question-book" ? "active" : ""} onClick={onQuestionBook}><Library /><span>题册</span></button>
       </div>
     </aside>
   );
@@ -330,6 +397,12 @@ function CourseWorkspace(props: {
   plannedTitles: string[];
   onOpenRecitation: () => void;
   onOpenQuestionBook: (id?: number) => void;
+  userDock: UserDock | null;
+  sharedVersion: string;
+  updateAvailable: boolean;
+  onViewOriginal: () => void;
+  onReviewUpdate: () => void;
+  onPracticeEvidence: (hintUsed: boolean) => void;
 }) {
   const tabs: Tab[] = ["Overview", "Resources", "Notes", "Practice", "Exam"];
   const tabLabels: Record<Tab, string> = { Overview: "课程主页", Resources: "资料", Notes: "笔记", Practice: "练习", Exam: "考试" };
@@ -340,15 +413,16 @@ function CourseWorkspace(props: {
   return (
     <div className="course-page">
       <header className="course-header">
+        {props.userDock && <div className="fork-origin-bar"><span><GitFork size={11} /> Fork 自 北京大学 · 概率论 · 2026 春季</span><button onClick={props.onViewOriginal}>查看原课程舱 <ArrowRight size={11} /></button></div>}
         <div className="course-title-row">
           <div>
-            <div className="eyebrow">课程星坞</div>
+            <div className="eyebrow">{props.userDock ? "Lucian 的私人课程舱" : "课程星坞"}</div>
             <h1>概率论</h1>
             <p>2026 秋季学期 <span>·</span> 张教授 <span>·</span> {props.resourceCount} 份资料</p>
           </div>
           <div className="index-status">
-            <span><span className="status-dot" /> 课程笔记 v1.8</span>
-            <small>14/18 份资料已整理</small>
+            <span><span className="status-dot" /> 共享层 {props.sharedVersion}</span>
+            <small>{props.userDock ? "私人层 · 3 篇笔记 · 8 道题册内容" : "14/18 份资料已整理"}</small>
           </div>
         </div>
         <div className="course-tabs" role="tablist">
@@ -357,20 +431,24 @@ function CourseWorkspace(props: {
       </header>
       <div className="tab-stage" key={props.activeTab}>
         {props.activeTab === "Overview" && <Overview {...props} />}
-        {props.activeTab === "Resources" && <ResourcesPage resources={props.resources} onAdd={props.onAddResource} onOrganize={startNoteWorkflow} />}
+        {props.activeTab === "Resources" && <ResourcesPage resources={props.resources} onAdd={props.onAddResource} onOrganize={startNoteWorkflow} forked={Boolean(props.userDock)} />}
         {props.activeTab === "Notes" && <NotesPage resources={props.resources} setResources={props.setResources} workflow={props.noteWorkflow} setWorkflow={props.setNoteWorkflow} onAgentAction={props.onAgentAction} onPractice={() => props.setActiveTab("Practice")} onRecitation={props.onOpenRecitation} onQuestionBook={props.onOpenQuestionBook} onAddPlan={props.onAddPlan} />}
-        {props.activeTab === "Practice" && <PracticePage onAddPlan={props.onAddPlan} onOpenQuestionBook={props.onOpenQuestionBook} />}
+        {props.activeTab === "Practice" && <PracticePage onAddPlan={props.onAddPlan} onOpenQuestionBook={props.onOpenQuestionBook} onPracticeEvidence={props.onPracticeEvidence} />}
         {props.activeTab === "Exam" && <ExamPage />}
       </div>
     </div>
   );
 }
 
-function Overview({ resources, setActiveTab, onAddPlan, plannedTitles }: {
+function Overview({ resources, setActiveTab, onAddPlan, plannedTitles, userDock, sharedVersion, updateAvailable, onReviewUpdate }: {
   resources: Resource[];
   setActiveTab: (tab: Tab) => void;
   onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
   plannedTitles: string[];
+  userDock: UserDock | null;
+  sharedVersion: string;
+  updateAvailable: boolean;
+  onReviewUpdate: () => void;
 }) {
   const upcoming = [
     { date: "今天 17:00", title: "完成作业 8", detail: "还有 6 道题待提交", urgent: true, minutes: 25, mode: "focus" as PlanMode, source: "课程待办" },
@@ -379,6 +457,8 @@ function Overview({ resources, setActiveTab, onAddPlan, plannedTitles }: {
   ];
   return (
     <div className="course-home-content content-width">
+      {userDock && <section className="layer-architecture"><div><span className="layer-icon shared"><Library size={14} /></span><span><strong>共享课程层 · {sharedVersion}</strong><small>24 份课程资料 · 7 章主笔记 · 来自原课程舱</small></span></div><ArrowRight size={14} /><div><span className="layer-icon personal"><UserRound size={14} /></span><span><strong>你的私人学习层</strong><small>阅读位置 · 个人笔记 · 题册 · 学习记录</small></span></div></section>}
+      {updateAvailable && <section className="upstream-banner"><span><GitFork size={14} /></span><div><strong>原课程舱已更新到 v1.9</strong><small>新增期末复习索引、3 道典型题和第 6 章来源更新。</small></div><button onClick={onReviewUpdate}>审阅更新 <ArrowRight size={12} /></button></section>}
       <section className="continue-learning-card">
         <div className="continue-copy"><div className="eyebrow">继续学习</div><span>课程主笔记 · 4.2</span><h2>从塔式法则继续阅读</h2><p>上次阅读到“证明思路”，昨天 21:40。入口保留在当前发布版本的具体章节。</p><button className="primary-button" onClick={() => setActiveTab("Notes")}><Play size={14} /> 打开笔记 4.2</button></div>
         <div className="continue-preview"><span>课程主笔记 · v1.8</span><strong>E[E(X|Y)] = E(X)</strong><small>4.2 条件期望 · 塔式法则</small><i>上次阅读：证明思路</i></div>
@@ -396,21 +476,24 @@ function Overview({ resources, setActiveTab, onAddPlan, plannedTitles }: {
   );
 }
 
-function ResourcesPage({ resources, onAdd, onOrganize }: { resources: Resource[]; onAdd: () => void; onOrganize: (resourceIds?: number[]) => void }) {
+function ResourcesPage({ resources, onAdd, onOrganize, forked }: { resources: Resource[]; onAdd: () => void; onOrganize: (resourceIds?: number[]) => void; forked: boolean }) {
   const filters = ["全部", "课件", "教材", "作业", "往年试卷", "笔记", "视频"];
   const [filter, setFilter] = useState("全部");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const visible = filter === "全部" ? resources : resources.filter((resource) => resource.type === filter);
+  const sharedVisible = visible.filter((resource) => resource.layer === "shared");
+  const personalVisible = visible.filter((resource) => resource.layer === "personal");
   const allVisibleSelected = visible.length > 0 && visible.every((resource) => selectedIds.includes(resource.id));
   return (
     <div className="resources-content content-width">
       <div className="page-intro row-intro"><div><div className="eyebrow">课程资料库</div><h2>原始资料与整理状态</h2><p>资料入库后保持原样；Agent 只在你发起整理任务时读取、检索和组织内容。</p></div><div className="resource-header-actions"><button onClick={() => onOrganize()}><Sparkles size={14} /> 专题整理</button><button className="primary-button" onClick={onAdd}><Plus size={15} /> 添加资料</button></div></div>
       <section className="resource-status-guide"><div><span className="resource-state 入库" /> <strong>已入库</strong><small>只保存原始资料，尚未解析</small></div><div><span className="resource-state 索引" /> <strong>已索引</strong><small>曾在 Agent 任务中读取和检索</small></div><div><span className="resource-state 整理" /> <strong>已整理</strong><small>内容已进入确认过的笔记</small></div></section>
       <div className="resource-filters">{filters.map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
-      <div className="resource-list-header selectable"><button aria-label={allVisibleSelected ? "取消全选" : "全选当前资料"} className={allVisibleSelected ? "selected" : ""} onClick={() => setSelectedIds(allVisibleSelected ? selectedIds.filter((id) => !visible.some((resource) => resource.id === id)) : [...new Set([...selectedIds, ...visible.map((resource) => resource.id)])])}>{allVisibleSelected && <Check size={11} />}</button><span>名称</span><span>添加时间</span><span>整理状态</span><span /></div>
-      <div className="resource-list">
-        {visible.map((resource) => <ResourceRow key={resource.id} resource={resource} selected={selectedIds.includes(resource.id)} onToggle={() => setSelectedIds((ids) => ids.includes(resource.id) ? ids.filter((id) => id !== resource.id) : [...ids, resource.id])} />)}
-      </div>
+      {!forked && <><div className="resource-list-header selectable"><button aria-label={allVisibleSelected ? "取消全选" : "全选当前资料"} className={allVisibleSelected ? "selected" : ""} onClick={() => setSelectedIds(allVisibleSelected ? selectedIds.filter((id) => !visible.some((resource) => resource.id === id)) : [...new Set([...selectedIds, ...visible.map((resource) => resource.id)])])}>{allVisibleSelected && <Check size={11} />}</button><span>名称</span><span>添加时间</span><span>整理状态</span><span /></div><div className="resource-list">{visible.map((resource) => <ResourceRow key={resource.id} resource={resource} selected={selectedIds.includes(resource.id)} onToggle={() => setSelectedIds((ids) => ids.includes(resource.id) ? ids.filter((id) => id !== resource.id) : [...ids, resource.id])} />)}</div></>}
+      {forked && <div className="layered-resources">
+        <section><div className="resource-layer-heading"><div><span className="layer-icon shared"><Library size={13} /></span><span><strong>共享资料</strong><small>来自北京大学 · 概率论公共课程舱 · {sharedVisible.length} 项当前可见</small></span></div><em>随共享层更新</em></div><div className="resource-list">{sharedVisible.map((resource) => <ResourceRow key={resource.id} resource={resource} selected={selectedIds.includes(resource.id)} onToggle={() => setSelectedIds((ids) => ids.includes(resource.id) ? ids.filter((id) => id !== resource.id) : [...ids, resource.id])} />)}</div></section>
+        <section><div className="resource-layer-heading"><div><span className="layer-icon personal"><UserRound size={13} /></span><span><strong>我的资料</strong><small>只属于 Lucian · 不会自动发布到共享层</small></span></div><button onClick={onAdd}><Plus size={12} /> 添加私人资料</button></div><div className="resource-list">{personalVisible.map((resource) => <ResourceRow key={resource.id} resource={resource} selected={selectedIds.includes(resource.id)} onToggle={() => setSelectedIds((ids) => ids.includes(resource.id) ? ids.filter((id) => id !== resource.id) : [...ids, resource.id])} />)}</div>{personalVisible.length === 0 && <div className="private-resource-empty">还没有这个类型的私人资料。</div>}</section>
+      </div>}
       {visible.length === 0 && <div className="empty-state"><FolderOpen size={22} /><h3>还没有{filter}</h3><p>添加资料后，它会先作为未经处理的原始资料保存。</p></div>}
       {selectedIds.length > 0 && <div className="resource-selection-bar"><span><strong>{selectedIds.length}</strong> 份资料已选择</span><button onClick={() => setSelectedIds([])}>取消</button><button className="primary-button" onClick={() => onOrganize(selectedIds)}><Sparkles size={14} /> 整理为笔记</button></div>}
     </div>
@@ -494,9 +577,10 @@ function NotesPage({ resources, setResources, workflow, setWorkflow, onAgentActi
   );
 }
 
-function PracticePage({ onAddPlan, onOpenQuestionBook }: {
+function PracticePage({ onAddPlan, onOpenQuestionBook, onPracticeEvidence }: {
   onAddPlan: (item: Omit<PlanItem, "id" | "status">) => void;
   onOpenQuestionBook: (id?: number) => void;
+  onPracticeEvidence: (hintUsed: boolean) => void;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -532,7 +616,7 @@ function PracticePage({ onAddPlan, onOpenQuestionBook }: {
           )}
           <div className="practice-actions">
             <button className="text-button" onClick={() => setHint(!hint)} disabled={submitted}>{hint ? "收起提示" : "查看提示"}</button>
-            {submitted ? <button className="primary-button" onClick={resetQuestion}>下一题 <ArrowRight size={15} /></button> : <button className="primary-button" disabled={selected === null} onClick={() => setSubmitted(true)}>提交答案</button>}
+            {submitted ? <button className="primary-button" onClick={resetQuestion}>下一题 <ArrowRight size={15} /></button> : <button className="primary-button" disabled={selected === null} onClick={() => { setSubmitted(true); if (selected !== 1) onPracticeEvidence(hint); }}>提交答案</button>}
           </div>
         </div>
         <aside className="practice-context">
@@ -586,7 +670,7 @@ function ExamPage() {
   );
 }
 
-function CourseAgent({ open, onClose, message, setMessage, topic, resourceCount, onOpenNoteWorkflow }: {
+function CourseAgent({ open, onClose, message, setMessage, topic, resourceCount, onOpenNoteWorkflow, forked, practiceEvidence, onReviewNote, onRetryQuestion, onStartReview }: {
   open: boolean;
   onClose: () => void;
   message: typeof defaultAgent;
@@ -594,6 +678,11 @@ function CourseAgent({ open, onClose, message, setMessage, topic, resourceCount,
   topic: string;
   resourceCount: number;
   onOpenNoteWorkflow: () => void;
+  forked: boolean;
+  practiceEvidence: { incorrect: boolean; hintUsed: boolean } | null;
+  onReviewNote: () => void;
+  onRetryQuestion: () => void;
+  onStartReview: () => void;
 }) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -685,8 +774,9 @@ function CourseAgent({ open, onClose, message, setMessage, topic, resourceCount,
   return (
     <aside className={`course-ai ${open ? "open" : ""}`} aria-hidden={!open}>
       <header className="ai-panel-header"><div><span className="ai-orb"><Sparkles size={14} /></span><div><strong>课程 Agent</strong><small>检索、整理与生成课程内容</small></div></div><button onClick={onClose} aria-label="关闭课程 Agent"><X size={17} /></button></header>
-      <div className="context-stack"><span>当前上下文</span><div><strong>概率论</strong><small>{resourceCount} 份可用资料</small></div><div><strong>课程主笔记 v1.8</strong><small>当前内容资产</small></div><div><strong>{topic}</strong><small>当前章节</small></div></div>
+      <div className={`context-stack ${forked ? "dual-context" : ""}`}><span>当前上下文</span><div><strong>概率论</strong><small>{topic}</small></div>{forked ? <><div className="context-layer shared"><strong>共享层</strong><small>24 份课程资料 · 主笔记 v1.8</small></div><div className="context-layer personal"><strong>私人层</strong><small>3 篇笔记 · 8 道题册 · 4 条学习记录</small></div></> : <><div><strong>课程主笔记 v1.8</strong><small>当前内容资产</small></div><div><strong>{topic}</strong><small>{resourceCount} 份可用资料</small></div></>}</div>
       <div className="ai-scroll">
+        {practiceEvidence && <section className="agent-practice-alert"><div><Sparkles size={13} /><span>来自你的私人学习记录</span></div><p>你刚才在条件期望题中{practiceEvidence.hintUsed ? "使用了一次提示，并且答案仍有遗漏" : "回答错误"}。公共资料给出课程重点，下面的行动只根据你的本次记录生成。</p><div><button onClick={onReviewNote}>复习笔记 4.2</button><button onClick={onRetryQuestion}>重做本题</button><button className="primary-button" onClick={onStartReview}>开始 10 分钟复习</button></div></section>}
         <div className="suggestions"><span>任务操作</span>{agentActions.map((action) => <button key={action} onClick={() => respond(action)} disabled={typing}>{action}<ArrowRight size={13} /></button>)}</div>
         <div className="chat-thread" aria-live="polite">
           {messages.map((item) => (
@@ -733,7 +823,7 @@ function AddResourceModal({ onClose, onAdded }: { onClose: () => void; onAdded: 
     setStage("uploading");
     window.setTimeout(() => {
       const title = method === "上传文件" ? "第 09 讲 — 鞅" : value || (method === "写笔记" ? "新课程笔记" : "已链接的课程资料");
-      onAdded({ id: Date.now(), type: method === "写笔记" ? "笔记" : method === "添加视频" ? "视频" : "课件", title, detail: "原始资料 · 尚未处理", date: "刚刚", status: "已入库" });
+      onAdded({ id: Date.now(), type: method === "写笔记" ? "笔记" : method === "添加视频" ? "视频" : "课件", title, detail: "原始资料 · 尚未处理", date: "刚刚", status: "已入库", layer: "personal" });
       setStage("added");
     }, 900);
   };
@@ -775,21 +865,39 @@ function SearchPalette({ query, setQuery, onClose, onSelect }: { query: string; 
   );
 }
 
-function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?: Tab) => void; planItems: PlanItem[]; onOpenPlan: () => void }) {
+function HomePage({
+  onOpenCourse,
+  planItems,
+  onOpenPlan,
+  onExplore,
+  onViewDock,
+  onForkDock,
+  userDock,
+}: {
+  onOpenCourse: (tab?: Tab) => void;
+  planItems: PlanItem[];
+  onOpenPlan: () => void;
+  onExplore: () => void;
+  onViewDock: (dock: CourseDock) => void;
+  onForkDock: (dock: CourseDock) => void;
+  userDock: UserDock | null;
+}) {
   const completedPlans = planItems.filter((item) => item.status === "已完成").length;
   const totalMinutes = planItems.reduce((total, item) => total + item.minutes, 0);
 
   return (
-    <div className="standalone-page content-width">
-      <div className="home-greeting"><div className="eyebrow">星期三 · 8月12日</div><h1>你的学期</h1><p>下午好，Lucian。专注两个小时，就能让每门课继续保持节奏。</p></div>
-      <div className="semester-title"><h2>2026 秋季学期</h2><span>4 门课程</span></div>
-      <div className="semester-courses">{courses.map((course) => <button key={course.name} onClick={() => onOpenCourse("Overview")}><span className="home-course-dot" style={{ background: course.color }} /><span className="home-course-name"><strong>{course.name}</strong><small>{course.next}</small></span><span className="home-asset-state"><strong>{course.organized}/{course.total} 份资料已整理</strong><small>主笔记 {course.chapters} 个章节</small></span><span className="exam-date"><small>期末</small>{course.exam}</span><ChevronRight size={15} /></button>)}</div>
-      <section className="home-today">
+    <div className="standalone-page content-width home-v2">
+      <div className="home-greeting"><div className="eyebrow">星期六 · 8月15日</div><h1>欢迎回来，Lucian。</h1><p>课程资料停靠在共享课程舱，学习记录只留在自己的空间里。</p></div>
+      <section className="continue-learning">
+        <div className="continue-copy"><span className="continue-kicker">继续学习</span><h2>条件期望 · 塔式法则</h2><p>上次停在课程笔记 4.2。你在一道练习中查看过提示，可以先用 10 分钟补上这个缺口。</p><div className="continue-meta"><span>概率论</span><span>笔记 4.2</span><span>约 18 分钟</span></div></div>
+        <button className="primary-button" onClick={() => onOpenCourse("Notes")}>继续 <ArrowRight size={14} /></button>
+      </section>
+      <section className="home-section">
         <div className="section-heading home-plan-heading">
-          <div><div className="eyebrow">今天 · 8月12日</div><h2>每日计划</h2></div>
+          <div><div className="eyebrow">今天</div><h2>学习计划</h2></div>
           <div className="daily-plan-actions">
             <span>{completedPlans}/{planItems.length} 已完成 · {totalMinutes} 分钟</span>
-            <button onClick={onOpenPlan}>打开每日计划 <ArrowRight size={13} /></button>
+            <button onClick={onOpenPlan}>查看全部 <ArrowRight size={13} /></button>
           </div>
         </div>
         <div className="daily-plan-progress" aria-label={`今日计划已完成 ${completedPlans} 项，共 ${planItems.length} 项`}><span style={{ width: `${planItems.length ? (completedPlans / planItems.length) * 100 : 0}%` }} /></div>
@@ -802,6 +910,14 @@ function HomePage({ onOpenCourse, planItems, onOpenPlan }: { onOpenCourse: (tab?
             </button>
           ))}
         </div>
+      </section>
+      <section className="home-section">
+        <div className="section-heading"><div><div className="eyebrow">我的课程舱</div><h2>这学期</h2></div><button className="text-button" onClick={onExplore}><Compass size={14} /> 发现课程舱</button></div>
+        <div className="semester-courses home-docks">{courses.map((course, index) => <button key={course.name} onClick={() => onOpenCourse("Overview")}><span className="home-course-dot" style={{ background: course.color }} /><span className="home-course-name"><strong>{course.name}</strong><small>{index === 0 && userDock ? `Fork 自 ${userDock.sourceTitle} · 私人层已开启` : course.next}</small></span><span className="home-asset-state"><strong>{course.organized}/{course.total} 份共享资料</strong><small>{index === 0 && userDock ? "你的笔记与练习记录保持私有" : `个人笔记 ${course.chapters} 个章节`}</small></span><span className="exam-date"><small>期末</small>{course.exam}</span><ChevronRight size={15} /></button>)}</div>
+      </section>
+      <section className="home-section recommended-docks">
+        <div className="section-heading"><div><div className="eyebrow">来自校园社区</div><h2>推荐课程舱</h2></div><button className="text-button" onClick={onExplore}>浏览全部 <ArrowRight size={13} /></button></div>
+        <div className="dock-directory compact">{dockCatalog.slice(0, 3).map((dock) => <DockListRow key={dock.id} dock={dock} compact onView={() => onViewDock(dock)} onFork={() => onForkDock(dock)} />)}</div>
       </section>
     </div>
   );
